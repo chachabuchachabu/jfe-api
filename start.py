@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-rc4"; START=time.time()
+VERSION="1.0.0-rc5"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -37,6 +37,45 @@ def block(s,source=None,**kw):
  d={"status":s}
  if source:d["source"]=source
  d.update(kw);return d
+
+
+def parse_stats(raw, entry):
+ # Structural row parser: exact Entry identity anchors each rider's statistics.
+ out=[]
+ for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>",raw,flags=re.S|re.I):
+  t=txt(tr); hits=[e for e in entry if e["name"] in t]
+  if len(hits)!=1: continue
+  e=hits[0]
+  cells=[txt(x) for x in re.findall(r"<td\b[^>]*>(.*?)</td>",tr,flags=re.S|re.I)]
+  # Score is distinctive 2-3 digit decimal; rates are percentages.
+  scores=[float(x) for x in re.findall(r"(?<!\d)(\d{2,3}\.\d{2})(?!\d)",t)]
+  rates=[float(x) for x in re.findall(r"(\d{1,3}\.\d)%",t)]
+  # style: netkeirin emits a prefixed numeric class marker such as 1逃 / 3追.
+  sm=re.search(r"(?:^|\s)[123]?([逃追両])(?:\s|$)",t)
+  if not scores or len(rates)<3 or not sm: continue
+  # Use the last three percentages in the row as win/2-place/3-place rates.
+  out.append({"car_no":e["car_no"],"name":e["name"],"score":scores[0],"style":sm.group(1),
+              "win_rate":rates[-3],"two_rate":rates[-2],"three_rate":rates[-1]})
+ d={x["car_no"]:x for x in out}
+ rows=[d[k] for k in sorted(d)]
+ ok=(len(rows)==len(entry) and {x["car_no"] for x in rows}=={x["car_no"] for x in entry}
+     and all(0<=x["win_rate"]<=x["two_rate"]<=x["three_rate"]<=100 for x in rows)
+     and all(50<=x["score"]<=150 for x in rows))
+ return rows,ok
+
+def parse_line(raw, entry):
+ # Prefer the explicit "並び予想" section and bind its rider names back to Entry.
+ t=txt(raw); pos=t.find("並び予想")
+ if pos<0:return [],False
+ s=t[pos:pos+1800]
+ seq=[]
+ for m in re.finditer(r"([1-9])\s*([一-龯々　 ]{1,12})",s):
+  car=int(m.group(1)); name=re.sub(r"[　 ]+","",m.group(2))
+  match=[e for e in entry if e["car_no"]==car and (e["name"].startswith(name) or name.startswith(e["name"][:2]))]
+  if match and car not in seq:seq.append(car)
+ # A safe line order must cover every entrant exactly once. Group boundaries are intentionally not inferred yet.
+ ok=(len(seq)==len(entry) and set(seq)=={e["car_no"] for e in entry})
+ return seq,ok
 
 def parse_result(raw, entry):
  rows=[]
@@ -128,7 +167,7 @@ def race(date,venue,rno):
  return {"service":"JFE","version":VERSION,"status":"DEGRADED",
  "race":{"race_id":rid,"date":date,"venue":venue,"race_no":int(rno),"start_time":st.group(1) if st else None,"deadline":cl.group(1) if cl else None,"identity_validated":True},
  "riders":riders if eok else [],"blocks":blocks,"provenance":urls,
- "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":False,"result_parser":True,
+ "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":False,"result_parser":True,"rider_stats_parser":True,"line_order_parser":True,
  "note":"Transport/content binding may qualify; actual odds parser + pre-race freshness still required before READY."},
  "diagnostics":{"source_health":HEALTH,"snapshot_races":len(SNAPSHOTS),"hash_owner_count":len(HASH_OWNER)}}
 class S(BaseHTTPRequestHandler):

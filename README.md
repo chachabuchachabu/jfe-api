@@ -1,21 +1,17 @@
-# JFE v1.0 RC4 — Multi-Block Parser
+# JFE v1.0 RC5 — RiderStats + Line Qualification
 
-RC4 preserves RC3 Identity/Entry/Odds integrity guards and adds a fail-closed Result parser.
+Preserves RC4 Identity, Entry, Result and RC3 Odds guards.
 
-## Result qualification
-A completed race becomes Result READY only when:
-- every Entry rider appears exactly once in Result,
-- ranks are contiguous 1..N,
-- result car numbers exactly equal the Entry car-number set,
-- each result row binds to exactly one known rider.
+RiderStats READY requires every Entry rider to be row-bound and to have:
+score, style, win rate, 2-place rate, 3-place rate.
+Rates must satisfy win <= 2-place <= 3-place.
 
-It also extracts 2車複, 2車単, 3連複 and 3連単 payouts when present.
+Line parsing is deliberately split:
+- QUALIFIED_ORDER: all entrants are found exactly once in the published lineup order.
+- group_boundaries_qualified remains false until structural group separators are independently proven.
+This prevents JFE from inventing line boundaries from whitespace.
 
-RiderStats and Line move to QUALIFYING only; they are deliberately not READY yet.
-Odds remains guarded by RC3 and is deliberately not READY until live odds values and freshness are qualified.
-
-Regression race:
-2026-09-15 大宮10R / 202609152510
-Expected finish: 4-1-7-5-6-2-3
-Expected 3連複: 1-4-7 / 1900円
-Expected 3連単: 4>1>7 / 16260円
+Reference 大宮10R:
+line order 1,4,6,2,3,7,5.
+Expected scores:
+1 100.96 / 2 96.70 / 3 101.20 / 4 97.53 / 5 104.20 / 6 94.82 / 7 100.58.

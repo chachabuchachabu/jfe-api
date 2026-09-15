@@ -1,26 +1,25 @@
 {
-  "version": "1.0.0-rc4",
+  "version": "1.0.0-rc5",
   "syntax": "PASS",
-  "result_fail_closed": true,
-  "reference_race": "202609152510",
-  "expected_finish": [
-    4,
+  "reference": "202609152510",
+  "expected_line_order": [
     1,
-    7,
-    5,
+    4,
     6,
     2,
-    3
+    3,
+    7,
+    5
   ],
-  "expected_trio": {
-    "combination": "1-4-7",
-    "payout_yen": 1900
+  "expected_scores": {
+    "1": 100.96,
+    "2": 96.7,
+    "3": 101.2,
+    "4": 97.53,
+    "5": 104.2,
+    "6": 94.82,
+    "7": 100.58
   },
-  "expected_trifecta": {
-    "combination": "4>1>7",
-    "payout_yen": 16260
-  },
-  "rider_stats": "QUALIFYING",
-  "line": "QUALIFYING",
+  "line_group_boundaries_ready": false,
   "odds_ready": false
 }

@@ -1,4 +1,2 @@
-# JFE v0.9.2 — Entry Fail-Safe Hotfix
-Live v0.9.1 exposed a false-positive Entry READY: six rows were emitted for a seven-rider race and two labels were misread as names.
-v0.9.2 tightens validation: contiguous car numbers, expanded label rejection, and fail-closed behavior.
-If extraction is uncertain, Entry stays PENDING and riders are not emitted.
+# JFE v0.9.3 Structural Entry Parser
+Anchors extraction to table rows, katakana rider readings, and image/title identity attributes. Reference race must return exactly 7 contiguous cars or Entry fails closed.

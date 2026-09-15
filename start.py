@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-rc5"; START=time.time()
+VERSION="1.0.0-rc5.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -160,10 +160,16 @@ def race(date,venue,rno):
            validation="PASS" if result_ok else "FAIL_CLOSED")
  except Exception as e:rb=block("PENDING",error=str(e),parser_qualified=False)
  st=re.search(r"発走\s*(\d{1,2}:\d{2})",t);cl=re.search(r"締切\s*(\d{1,2}:\d{2})",t)
+ stats,stats_ok=parse_stats(raw,riders if eok else [])
+ line_order,line_ok=parse_line(raw,riders if eok else [])
  blocks={"identity":block("READY","netkeirin",acquired_at=now(),latency_ms=lat,transport=tr),
  "entry":block("READY" if eok else "PENDING","netkeirin",rider_count=len(riders),validation="PASS" if eok else "FAIL_CLOSED"),
- "rider_stats":block("QUALIFYING",reason="ROW_BOUND_STATS_PARSER_IN_DEVELOPMENT",entry_bound=True),
- "line":block("QUALIFYING",reason="STRUCTURAL_LINE_VALIDATION_IN_DEVELOPMENT"),"odds":ob,"result":rb}
+ "rider_stats":block("READY" if stats_ok else "PENDING","netkeirin",entry_bound=stats_ok,
+                     rider_count=len(stats),rows=stats,validation="PASS" if stats_ok else "FAIL_CLOSED"),
+ "line":block("QUALIFIED_ORDER" if line_ok else "PENDING","netkeirin",entry_bound=line_ok,
+              order=line_order,group_boundaries_qualified=False,
+              validation="ORDER_PASS_GROUPS_PENDING" if line_ok else "FAIL_CLOSED"),
+ "odds":ob,"result":rb}
  return {"service":"JFE","version":VERSION,"status":"DEGRADED",
  "race":{"race_id":rid,"date":date,"venue":venue,"race_no":int(rno),"start_time":st.group(1) if st else None,"deadline":cl.group(1) if cl else None,"identity_validated":True},
  "riders":riders if eok else [],"blocks":blocks,"provenance":urls,

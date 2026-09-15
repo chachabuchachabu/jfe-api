@@ -1,17 +1,14 @@
-# JFE v1.0 RC5 — RiderStats + Line Qualification
+# JFE v1.0 RC5.1 Hotfix
 
-Preserves RC4 Identity, Entry, Result and RC3 Odds guards.
+Fixes RC5 activation failure.
 
-RiderStats READY requires every Entry rider to be row-bound and to have:
-score, style, win rate, 2-place rate, 3-place rate.
-Rates must satisfy win <= 2-place <= 3-place.
+The race() execution path now explicitly calls:
+- parse_stats(...)
+- parse_line(...)
 
-Line parsing is deliberately split:
-- QUALIFIED_ORDER: all entrants are found exactly once in the published lineup order.
-- group_boundaries_qualified remains false until structural group separators are independently proven.
-This prevents JFE from inventing line boundaries from whitespace.
+Static release guard rejects the build if the RC4/RC5 placeholder markers remain.
 
-Reference 大宮10R:
-line order 1,4,6,2,3,7,5.
-Expected scores:
-1 100.96 / 2 96.70 / 3 101.20 / 4 97.53 / 5 104.20 / 6 94.82 / 7 100.58.
+Expected live behavior:
+- rider_stats is READY or PENDING/FAIL_CLOSED with real parser output; never the old *_IN_DEVELOPMENT marker.
+- line is QUALIFIED_ORDER or PENDING/FAIL_CLOSED with order output; never the old *_IN_DEVELOPMENT marker.
+- Identity, Entry, Result and Odds integrity behavior remain unchanged.

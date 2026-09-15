@@ -1,25 +1,7 @@
 {
-  "version": "1.0.0-rc5",
+  "version": "1.0.0-rc5.1",
   "syntax": "PASS",
-  "reference": "202609152510",
-  "expected_line_order": [
-    1,
-    4,
-    6,
-    2,
-    3,
-    7,
-    5
-  ],
-  "expected_scores": {
-    "1": 100.96,
-    "2": 96.7,
-    "3": 101.2,
-    "4": 97.53,
-    "5": 104.2,
-    "6": 94.82,
-    "7": 100.58
-  },
-  "line_group_boundaries_ready": false,
-  "odds_ready": false
+  "execution_path_hotfix": "PASS",
+  "legacy_placeholder_guard": "PASS",
+  "live_qualification": "PENDING"
 }

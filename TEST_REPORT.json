@@ -1,14 +1,22 @@
 {
-  "version": "0.9.3",
-  "syntax": "PASS",
-  "reference_expected": [
-    "加藤将武",
-    "高木翔",
-    "小川三士郎",
-    "小林潤二",
-    "藤田勝也",
-    "五十嵐綾",
-    "堤洋"
+  "version": "1.0.0-rc1",
+  "offline_syntax": "PASS",
+  "proven_live_from_previous_build": [
+    "identity",
+    "entry"
   ],
-  "live_retest": false
+  "intentionally_unqualified": [
+    "rider_stats",
+    "line",
+    "odds",
+    "result"
+  ],
+  "resilience_scaffold": [
+    "retry_backoff",
+    "ttl_cache",
+    "source_health",
+    "provenance",
+    "fail_closed"
+  ],
+  "live_render_test": false
 }

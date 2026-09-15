@@ -6,3 +6,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python start.py
     healthCheckPath: /health
+    envVars:
+      - key: JFE_MODE
+        value: qualification

@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: jfe-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    healthCheckPath: /health
+    envVars:
+      - key: JFE_MODE
+        value: qualification

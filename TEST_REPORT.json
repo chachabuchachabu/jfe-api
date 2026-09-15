@@ -1,0 +1,8 @@
+{
+  "version": "0.8.1",
+  "result": "PASS",
+  "syntax": "PASS",
+  "health": "200 UP",
+  "live_data_guard": "503 SOURCE_ADAPTERS_PENDING",
+  "external_render_test": false
+}

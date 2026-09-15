@@ -1,18 +1,21 @@
-# JFE v1.0 RC3 — Odds Integrity / Pre-Race Lock Foundation
+# JFE v1.0 RC4 — Multi-Block Parser
 
-RC3 fixes the RC2 ambiguity where different race requests appeared to yield identical odds snapshots.
+RC4 preserves RC3 Identity/Entry/Odds integrity guards and adds a fail-closed Result parser.
 
-Changes:
-- Odds fetch bypasses JFE TTL cache and requests no-cache.
-- Returned HTML must contain the requested race_id.
-- Raw SHA-256 is registered to a race owner; reuse by another race raises JFE-05 SOURCE_CONFLICT.
-- Snapshot key/evidence includes race_id, acquisition time, raw/content hashes, bytes, race-id occurrence count,
-  odds-like value count and unique value count.
-- Transport/content binding can become QUALIFIED_TRANSPORT, but Odds is NOT READY until the actual odds parser
-  and pre-race freshness rules are qualified.
-- Identity/Entry remain regression-protected.
+## Result qualification
+A completed race becomes Result READY only when:
+- every Entry rider appears exactly once in Result,
+- ranks are contiguous 1..N,
+- result car numbers exactly equal the Entry car-number set,
+- each result row binds to exactly one known rider.
 
-Recommended live sequence after deploy:
-1. 2026-09-15 大宮10R
-2. 2026-09-16 岸和田9R
-Compare raw_sha256, bytes, race_id_occurrences, odds_value_count and unique_odds_values.
+It also extracts 2車複, 2車単, 3連複 and 3連単 payouts when present.
+
+RiderStats and Line move to QUALIFYING only; they are deliberately not READY yet.
+Odds remains guarded by RC3 and is deliberately not READY until live odds values and freshness are qualified.
+
+Regression race:
+2026-09-15 大宮10R / 202609152510
+Expected finish: 4-1-7-5-6-2-3
+Expected 3連複: 1-4-7 / 1900円
+Expected 3連単: 4>1>7 / 16260円

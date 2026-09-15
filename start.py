@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-rc3"; START=time.time()
+VERSION="1.0.0-rc4"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -37,6 +37,46 @@ def block(s,source=None,**kw):
  d={"status":s}
  if source:d["source"]=source
  d.update(kw);return d
+
+def parse_result(raw, entry):
+ rows=[]
+ for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>",raw,flags=re.S|re.I):
+  t=txt(tr)
+  m=re.search(r"([1-9])着",t)
+  if not m: continue
+  rank=int(m.group(1))
+  # Result rows contain linked rider name; bind only to a known Entry rider.
+  hits=[]
+  for e in entry:
+   if e["name"] in t: hits.append(e)
+  if len(hits)!=1: continue
+  e=hits[0]
+  # Require the car number to occur as a standalone table-cell value.
+  cells=[txt(x) for x in re.findall(r"<td\b[^>]*>(.*?)</td>",tr,flags=re.S|re.I)]
+  nums=[int(x) for x in cells if re.fullmatch(r"[1-9]",x)]
+  if e["car_no"] not in nums: continue
+  ag=re.search(r"(?<!\d)(\d{2}\.\d)(?!\d)",t)
+  decision=next((x for x in ("逃","捲","差","マーク") if x in t),None)
+  rows.append({"rank":rank,"car_no":e["car_no"],"name":e["name"],
+               "agari":float(ag.group(1)) if ag else None,"decision":decision})
+ rows=sorted({x["rank"]:(x) for x in rows}.values(),key=lambda x:x["rank"])
+ cars=[x["car_no"] for x in rows]
+ ok=(len(rows)==len(entry) and [x["rank"] for x in rows]==list(range(1,len(entry)+1))
+     and len(cars)==len(set(cars)) and set(cars)=={x["car_no"] for x in entry})
+ return rows,ok
+
+def parse_payouts(raw):
+ t=txt(raw); out={}
+ pats={
+  "quinella":r"２車複\s*([1-9]-[1-9])\s*([\d,]+)円",
+  "exacta":r"２車単\s*([1-9]>[1-9])\s*([\d,]+)円",
+  "trio":r"３連複\s*([1-9]-[1-9]-[1-9])\s*([\d,]+)円",
+  "trifecta":r"３連単\s*([1-9]>[1-9]>[1-9])\s*([\d,]+)円"}
+ for k,p in pats.items():
+  m=re.search(p,t)
+  if m: out[k]={"combination":m.group(1),"payout_yen":int(m.group(2).replace(",",""))}
+ return out
+
 def odds_integrity(raw,rid):
  acquired=now(); rawhash=hashlib.sha256(raw.encode()).hexdigest()
  # Strong evidence: requested race_id must occur in the returned document itself.
@@ -73,17 +113,22 @@ def race(date,venue,rno):
  except Exception as e:ob=block("PENDING",error=str(e),parser_qualified=False)
  try:
   rr,rl,rt=fetch(urls["result"],15)
-  rb=block("QUALIFYING","netkeirin",acquired_at=now(),latency_ms=rl,transport=rt,content_bytes=len(rr.encode()),parser_qualified=False)
+  result_rows,result_ok=parse_result(rr,riders if eok else [])
+  payouts=parse_payouts(rr)
+  rb=block("READY" if result_ok else "PENDING","netkeirin",acquired_at=now(),latency_ms=rl,transport=rt,
+           content_bytes=len(rr.encode()),parser_qualified=result_ok,entry_bound=result_ok,
+           finishers=result_rows,payouts=payouts,
+           validation="PASS" if result_ok else "FAIL_CLOSED")
  except Exception as e:rb=block("PENDING",error=str(e),parser_qualified=False)
  st=re.search(r"発走\s*(\d{1,2}:\d{2})",t);cl=re.search(r"締切\s*(\d{1,2}:\d{2})",t)
  blocks={"identity":block("READY","netkeirin",acquired_at=now(),latency_ms=lat,transport=tr),
  "entry":block("READY" if eok else "PENDING","netkeirin",rider_count=len(riders),validation="PASS" if eok else "FAIL_CLOSED"),
- "rider_stats":block("PENDING",reason="AUTHORITATIVE_PROFILE_JOIN_NEXT"),
- "line":block("PENDING",reason="STRUCTURAL_LINE_PARSER_NEXT"),"odds":ob,"result":rb}
+ "rider_stats":block("QUALIFYING",reason="ROW_BOUND_STATS_PARSER_IN_DEVELOPMENT",entry_bound=True),
+ "line":block("QUALIFYING",reason="STRUCTURAL_LINE_VALIDATION_IN_DEVELOPMENT"),"odds":ob,"result":rb}
  return {"service":"JFE","version":VERSION,"status":"DEGRADED",
  "race":{"race_id":rid,"date":date,"venue":venue,"race_no":int(rno),"start_time":st.group(1) if st else None,"deadline":cl.group(1) if cl else None,"identity_validated":True},
  "riders":riders if eok else [],"blocks":blocks,"provenance":urls,
- "qualification":{"fabricated_data":False,"odds_integrity_layer":True,"odds_ready":False,
+ "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":False,"result_parser":True,
  "note":"Transport/content binding may qualify; actual odds parser + pre-race freshness still required before READY."},
  "diagnostics":{"source_health":HEALTH,"snapshot_races":len(SNAPSHOTS),"hash_owner_count":len(HASH_OWNER)}}
 class S(BaseHTTPRequestHandler):

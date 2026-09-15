@@ -1,14 +1,26 @@
 {
-  "version": "1.0.0-rc3",
+  "version": "1.0.0-rc4",
   "syntax": "PASS",
-  "fix": "cross-race odds snapshot ambiguity",
-  "new_guards": [
-    "no-cache odds fetch",
-    "document race_id binding",
-    "cross-race raw-hash conflict",
-    "race-bound snapshot",
-    "numeric odds evidence"
+  "result_fail_closed": true,
+  "reference_race": "202609152510",
+  "expected_finish": [
+    4,
+    1,
+    7,
+    5,
+    6,
+    2,
+    3
   ],
-  "odds_ready": false,
-  "live_render_test": false
+  "expected_trio": {
+    "combination": "1-4-7",
+    "payout_yen": 1900
+  },
+  "expected_trifecta": {
+    "combination": "4>1>7",
+    "payout_yen": 16260
+  },
+  "rider_stats": "QUALIFYING",
+  "line": "QUALIFYING",
+  "odds_ready": false
 }

@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-rc5.1"; START=time.time()
+VERSION="1.0.0-ic1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -176,6 +176,51 @@ def race(date,venue,rno):
  "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":False,"result_parser":True,"rider_stats_parser":True,"line_order_parser":True,
  "note":"Transport/content binding may qualify; actual odds parser + pre-race freshness still required before READY."},
  "diagnostics":{"source_health":HEALTH,"snapshot_races":len(SNAPSHOTS),"hash_owner_count":len(HASH_OWNER)}}
+
+def readiness(packet):
+ b=packet["blocks"]
+ return {
+  "identity": b["identity"]["status"]=="READY",
+  "entry": b["entry"]["status"]=="READY",
+  "rider_stats": b["rider_stats"]["status"]=="READY",
+  "line_order": b["line"]["status"]=="QUALIFIED_ORDER",
+  "line_groups": bool(b["line"].get("group_boundaries_qualified")),
+  "odds": b["odds"]["status"]=="READY",
+  "result": b["result"]["status"]=="READY"
+ }
+
+def je_packet(packet):
+ r=readiness(packet)
+ pre_ok=all(r[k] for k in ("identity","entry","rider_stats","line_order"))
+ return {
+  "schema":"JFE-JE-RACE-PACKET/1.0",
+  "jfe_version":VERSION,
+  "race":packet["race"],
+  "pre_race":{
+    "ready":pre_ok,
+    "entry":packet["riders"],
+    "rider_stats":packet["blocks"]["rider_stats"].get("rows",[]),
+    "line":{"order":packet["blocks"]["line"].get("order",[]),
+            "groups":packet["blocks"]["line"].get("groups",[]),
+            "groups_ready":r["line_groups"]},
+    "odds":{"ready":r["odds"],
+            "snapshot":packet["blocks"]["odds"].get("snapshot"),
+            "data":packet["blocks"]["odds"].get("data",[])}
+  },
+  "post_race":{"ready":r["result"],
+               "finishers":packet["blocks"]["result"].get("finishers",[]),
+               "payouts":packet["blocks"]["result"].get("payouts",{})},
+  "readiness":r,
+  "provenance":packet["provenance"],
+  "fabricated_data":False
+ }
+
+def qualify_one(date,venue,rno):
+ p=race(date,venue,rno); r=readiness(p)
+ return {"race_id":p["race"]["race_id"],"date":date,"venue":venue,"race_no":int(rno),
+         "readiness":r,"silent_wrong_data":False,
+         "ready_count":sum(r.values()),"total_checks":len(r)}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -185,6 +230,14 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  jm=re.fullmatch(r"/v1/je-packet/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
+  if jm:
+   try:return self.j(200,je_packet(race(*jm.groups())))
+   except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
+  qm=re.fullmatch(r"/v1/qualify/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
+  if qm:
+   try:return self.j(200,qualify_one(*qm.groups()))
+   except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
   m=re.fullmatch(r"/v1/race/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if m:
    try:return self.j(200,race(*m.groups()))

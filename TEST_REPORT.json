@@ -1,7 +1,25 @@
 {
-  "version": "1.0.0-rc5.1",
+  "version": "1.0.0-ic1",
   "syntax": "PASS",
-  "execution_path_hotfix": "PASS",
-  "legacy_placeholder_guard": "PASS",
-  "live_qualification": "PENDING"
+  "integrated_candidate": true,
+  "preserved": [
+    "identity",
+    "entry",
+    "rider_stats",
+    "line_order",
+    "result",
+    "odds_integrity_guard"
+  ],
+  "new": [
+    "JE packet",
+    "qualification endpoint",
+    "independent readiness",
+    "pre/post separation"
+  ],
+  "not_ready": [
+    "line_groups",
+    "odds",
+    "production_failover"
+  ],
+  "production_ready": false
 }

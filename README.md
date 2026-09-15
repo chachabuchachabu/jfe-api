@@ -1,14 +1,24 @@
-# JFE v1.0 RC5.1 Hotfix
+# JFE v1.0 Integrated Candidate IC1
 
-Fixes RC5 activation failure.
+Integrated development line.
 
-The race() execution path now explicitly calls:
-- parse_stats(...)
-- parse_line(...)
+Preserved qualified blocks:
+- Identity READY
+- Entry READY
+- RiderStats READY
+- Line Order QUALIFIED_ORDER
+- Result READY
+- RC3 Odds Integrity Guard
 
-Static release guard rejects the build if the RC4/RC5 placeholder markers remain.
+New integration:
+- `/v1/je-packet/{date}/{venue}/{race}`: normalized JE Race Packet.
+- `/v1/qualify/{date}/{venue}/{race}`: machine-readable per-block qualification.
+- Independent readiness flags: unqualified Line Groups and Odds cannot masquerade as READY.
+- Pre-race and post-race data are separated for leakage-safe JE learning.
 
-Expected live behavior:
-- rider_stats is READY or PENDING/FAIL_CLOSED with real parser output; never the old *_IN_DEVELOPMENT marker.
-- line is QUALIFIED_ORDER or PENDING/FAIL_CLOSED with order output; never the old *_IN_DEVELOPMENT marker.
-- Identity, Entry, Result and Odds integrity behavior remain unchanged.
+Still intentionally NOT READY:
+- Line group boundaries
+- Parsed/fresh live Odds
+- true multi-source production failover
+
+This candidate is for live qualification, not production.

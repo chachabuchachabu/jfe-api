@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="0.9.1"; START=time.time()
+VERSION="0.9.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 
 def rid(d,v,r):
@@ -10,7 +10,7 @@ def rid(d,v,r):
  return d.replace("-","")+c+f"{int(r):02d}"
 
 def fetch(u):
- q=urllib.request.Request(u,headers={"User-Agent":"JFE/0.9.1 qualification"})
+ q=urllib.request.Request(u,headers={"User-Agent":"JFE/0.9.2 qualification"})
  t=time.time()
  with urllib.request.urlopen(q,timeout=8) as x:
   return x.read().decode("utf-8","replace"),round((time.time()-t)*1000,1)
@@ -33,7 +33,8 @@ def parse_entry(raw):
   prof=[u for u in links if ("cyclist" in u.lower() or "racer" in u.lower() or "profile" in u.lower())]
   # Japanese full name: 2-5 kanji + optional spaces + 1-4 kanji. Avoid generic labels.
   names=re.findall(r"([一-龯々]{2,5}\s*[一-龯々]{1,4})",t)
-  bad={"競走得点","決まり手","選手名","脚質","ライン","予想","直近成績","級班"}
+  bad={"競走得点","決まり手","選手名","脚質","ライン","予想","直近成績","級班",
+       "番人気","選手徳島","人気","オッズ","競走","発走","締切"}
   names=[re.sub(r"\s+","",n) for n in names if re.sub(r"\s+","",n) not in bad]
   if mnum and names:
    no=int(mnum.group(1)); name=names[0]
@@ -52,7 +53,9 @@ def race(d,v,r):
   if not (f"{m}/{day}" in t and v in t and f"{int(r)}R" in t): raise ValueError("JFE-04 ID_MISMATCH")
   st=re.search(r"発走\s*(\d{1,2}:\d{2})",t); cl=re.search(r"締切\s*(\d{1,2}:\d{2})",t)
   riders=parse_entry(raw)
-  entry_ok=5<=len(riders)<=9 and len({x["car_no"] for x in riders})==len(riders)
+  nums=[x["car_no"] for x in riders]
+  entry_ok=(5<=len(riders)<=9 and nums==list(range(1,len(riders)+1))
+            and all(x["name"] not in {"番人気","選手徳島"} for x in riders))
   blocks={"identity":{"status":"READY","source":"netkeirin","acquired_at":at,"latency_ms":lat},
           "entry":{"status":"READY" if entry_ok else "PENDING","source":"netkeirin","rider_count":len(riders),
                    "validation":"PASS" if entry_ok else "UNQUALIFIED"},

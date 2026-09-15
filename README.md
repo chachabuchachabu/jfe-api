@@ -1,5 +1,4 @@
-# JFE v0.9.1 — Entry Qualification
-Adds conservative live Entry parsing on top of v0.9.0 Identity validation.
-Entry is READY only when 5–9 unique car numbers are extracted; otherwise it remains PENDING and no rider list is emitted.
-No fabricated rider data. Other blocks remain PENDING.
-Live test: `/v1/race/2026-09-15/大宮/10`
+# JFE v0.9.2 — Entry Fail-Safe Hotfix
+Live v0.9.1 exposed a false-positive Entry READY: six rows were emitted for a seven-rider race and two labels were misread as names.
+v0.9.2 tightens validation: contiguous car numbers, expanded label rejection, and fail-closed behavior.
+If extraction is uncertain, Entry stays PENDING and riders are not emitted.

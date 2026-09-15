@@ -1,5 +1,6 @@
 {
-  "version": "0.9.0",
-  "external_render_test": false,
-  "live_source_test": false
+  "version": "0.9.1",
+  "offline_syntax_test": true,
+  "live_entry_test": false,
+  "expected_reference_rider_count": 7
 }

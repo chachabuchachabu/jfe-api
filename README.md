@@ -1,17 +1,9 @@
-# JFE v1.0.0-rc1 — Integrated Qualification Build
+# JFE v1.0 RC2 — Multi-Block Qualification Probe
 
-This consolidates the proven Identity + Entry path and restores resilience scaffolding:
-retry/backoff, TTL cache, source-health diagnostics, provenance, fail-closed block states,
-and explicit qualification placeholders for RiderStats, Line, dynamic Odds and Result.
+RC2 keeps the proven Identity/Entry parser and adds controlled live probes for Odds and Result.
+It records acquisition time, source binding, latency, transport mode and an in-memory odds snapshot digest.
+Unqualified parsers remain QUALIFYING/PENDING — never READY.
 
-Important: RC1 does NOT claim unqualified blocks are live-ready. It deliberately returns
-PENDING for RiderStats/Line/Odds/Result rather than fabricating data.
-
-Qualification order after deployment:
-1. Regression: 2026-09-15 大宮10R Identity + Entry remain correct.
-2. RiderStats profile join.
-3. Line structural extraction.
-4. Odds timestamp/freshness/Pre-Race-Lock behavior on an unstarted race.
-5. Result PENDING→READY transition after finish.
-6. Multi-source failover qualification.
-7. 50→100 race batch qualification.
+RiderStats and Line remain fail-closed pending their authoritative/structural adapters.
+Next live test can use the completed 2026-09-15 Omiya 10R to qualify Result transport,
+then an unstarted current race is required to qualify Odds freshness and Pre-Race Lock semantics.

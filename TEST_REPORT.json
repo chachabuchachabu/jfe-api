@@ -1,22 +1,16 @@
 {
-  "version": "1.0.0-rc1",
-  "offline_syntax": "PASS",
-  "proven_live_from_previous_build": [
-    "identity",
-    "entry"
-  ],
-  "intentionally_unqualified": [
-    "rider_stats",
-    "line",
+  "version": "1.0.0-rc2",
+  "syntax": "PASS",
+  "identity_entry_regression_required": true,
+  "new_live_probes": [
     "odds",
     "result"
   ],
-  "resilience_scaffold": [
-    "retry_backoff",
-    "ttl_cache",
-    "source_health",
-    "provenance",
-    "fail_closed"
+  "odds_snapshot_fields": [
+    "acquired_at",
+    "sha256_16",
+    "bytes"
   ],
+  "unqualified_never_ready": true,
   "live_render_test": false
 }

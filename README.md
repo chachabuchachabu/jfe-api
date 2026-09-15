@@ -1,7 +1,4 @@
-# JFE API v0.8.1
-Single-file Render deployment shell for KFX/JE qualification.
-
-- `/health` => `200 UP`
-- `/v1/race/{date}/{venue}/{race_no}` => `503 SOURCE_ADAPTERS_PENDING`
-  until v0.9 live adapters are connected.
-- No database, disk, secrets, or paid Render resources are declared.
+# JFE v0.9.0
+Live-source qualification build. Real outbound fetch, strict race identity validation, timestamps/latency, HEAD support, and no fabricated data. Unqualified blocks remain PENDING.
+Test: `/v1/race/2026-09-15/大宮/10`
+Do not bypass source access controls.

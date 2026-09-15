@@ -1,16 +1,14 @@
 {
-  "version": "1.0.0-rc2",
+  "version": "1.0.0-rc3",
   "syntax": "PASS",
-  "identity_entry_regression_required": true,
-  "new_live_probes": [
-    "odds",
-    "result"
+  "fix": "cross-race odds snapshot ambiguity",
+  "new_guards": [
+    "no-cache odds fetch",
+    "document race_id binding",
+    "cross-race raw-hash conflict",
+    "race-bound snapshot",
+    "numeric odds evidence"
   ],
-  "odds_snapshot_fields": [
-    "acquired_at",
-    "sha256_16",
-    "bytes"
-  ],
-  "unqualified_never_ready": true,
+  "odds_ready": false,
   "live_render_test": false
 }

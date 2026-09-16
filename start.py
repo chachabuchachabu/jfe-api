@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-ic1"; START=time.time()
+VERSION="1.0.0-ic1.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -51,7 +51,17 @@ def parse_stats(raw, entry):
   scores=[float(x) for x in re.findall(r"(?<!\d)(\d{2,3}\.\d{2})(?!\d)",t)]
   rates=[float(x) for x in re.findall(r"(\d{1,3}\.\d)%",t)]
   # style: netkeirin emits a prefixed numeric class marker such as 1逃 / 3追.
-  sm=re.search(r"(?:^|\s)[123]?([逃追両])(?:\s|$)",t)
+  sm=re.search(r"(?:^|\s|[0-9])([逃追両])(?=\s|$|[0-9])",t) or re.search(r"([逃追両])",t)
+  # Some class rows format percentages without a literal percent sign. Use cell values only
+  # when exactly three plausible rate cells can be identified; never fabricate missing riders.
+  if len(rates)<3:
+   cell_rates=[]
+   for c in cells:
+    m=re.fullmatch(r"(\d{1,3}\.\d)%?",c)
+    if m:
+     v=float(m.group(1))
+     if 0<=v<=100: cell_rates.append(v)
+   if len(cell_rates)>=3: rates=cell_rates[-3:]
   if not scores or len(rates)<3 or not sm: continue
   # Use the last three percentages in the row as win/2-place/3-place rates.
   out.append({"car_no":e["car_no"],"name":e["name"],"score":scores[0],"style":sm.group(1),
@@ -123,12 +133,16 @@ def odds_integrity(raw,rid):
  # Extract conservative numeric odds-like values only as evidence, not yet as betting data.
  t=txt(raw); vals=re.findall(r"(?<!\d)(\d{1,4}\.\d)(?!\d)",t)
  unique=len(set(vals)); content_sig=hashlib.sha256((rid+"|"+ "|".join(vals[:500])).encode()).hexdigest()
- conflict=False; owner=HASH_OWNER.get(rawhash)
- if owner and owner!=rid: conflict=True
- else: HASH_OWNER[rawhash]=rid
+ conflict=False; generic=(occurrences==0 and len(vals)==0)
+ owner=HASH_OWNER.get(rawhash)
+ # Same unbound/no-odds template across races is a generic page, not a source conflict.
+ # A conflict is meaningful only when the document carries race-specific evidence.
+ if not generic:
+  if owner and owner!=rid: conflict=True
+  else: HASH_OWNER[rawhash]=rid
  snap={"race_id":rid,"acquired_at":acquired,"raw_sha256":rawhash,"content_sha256":content_sig,
        "bytes":len(raw.encode()),"race_id_occurrences":occurrences,"odds_value_count":len(vals),
-       "unique_odds_values":unique}
+       "unique_odds_values":unique,"generic_page":generic}
  SNAPSHOTS.setdefault(rid,[]).append(snap);SNAPSHOTS[rid]=SNAPSHOTS[rid][-5:]
  ok=(occurrences>0 and len(vals)>0 and unique>0 and not conflict)
  return ok,conflict,snap
@@ -145,7 +159,7 @@ def race(date,venue,rno):
  try:
   oraw,olat,otr=fetch(urls["odds"],0);ok,conflict,snap=odds_integrity(oraw,rid)
   ost="QUALIFIED_TRANSPORT" if ok else "PENDING"
-  err="JFE-05 SOURCE_CONFLICT" if conflict else (None if ok else "ODDS_CONTENT_NOT_BOUND")
+  err="JFE-05 SOURCE_CONFLICT" if conflict else (None if ok else ("ODDS_GENERIC_PAGE" if snap.get("generic_page") else "ODDS_CONTENT_NOT_BOUND"))
   ob=block(ost,"netkeirin",acquired_at=snap["acquired_at"],latency_ms=olat,transport=otr,
            identity_bound=snap["race_id_occurrences"]>0,integrity_pass=ok,snapshot=snap,parser_qualified=False)
   if err:ob["error"]=err
@@ -173,7 +187,7 @@ def race(date,venue,rno):
  return {"service":"JFE","version":VERSION,"status":"DEGRADED",
  "race":{"race_id":rid,"date":date,"venue":venue,"race_no":int(rno),"start_time":st.group(1) if st else None,"deadline":cl.group(1) if cl else None,"identity_validated":True},
  "riders":riders if eok else [],"blocks":blocks,"provenance":urls,
- "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":False,"result_parser":True,"rider_stats_parser":True,"line_order_parser":True,
+ "qualification":{"fabricated_data":False, "odds_integrity_layer":True,"odds_ready":ob.get("status")=="READY","result_parser":True,"rider_stats_parser":True,"line_order_parser":True,
  "note":"Transport/content binding may qualify; actual odds parser + pre-race freshness still required before READY."},
  "diagnostics":{"source_health":HEALTH,"snapshot_races":len(SNAPSHOTS),"hash_owner_count":len(HASH_OWNER)}}
 
@@ -197,7 +211,9 @@ def je_packet(packet):
   "jfe_version":VERSION,
   "race":packet["race"],
   "pre_race":{
-    "ready":pre_ok,
+    "ready":core_ok,
+    "core_ready":core_ok,
+    "enriched_ready":enriched_ok,
     "entry":packet["riders"],
     "rider_stats":packet["blocks"]["rider_stats"].get("rows",[]),
     "line":{"order":packet["blocks"]["line"].get("order",[]),
@@ -218,8 +234,32 @@ def je_packet(packet):
 def qualify_one(date,venue,rno):
  p=race(date,venue,rno); r=readiness(p)
  return {"race_id":p["race"]["race_id"],"date":date,"venue":venue,"race_no":int(rno),
-         "readiness":r,"silent_wrong_data":False,
+         "readiness":r,
+         "integrity":{"silent_wrong_data":"UNKNOWN",
+                      "detected_identity_mismatch":False,
+                      "detected_fail_closed":any(x.get("validation")=="FAIL_CLOSED" for x in p["blocks"].values() if isinstance(x,dict)),
+                      "note":"Silent wrong data requires external ground-truth qualification; it is never assumed false."},
          "ready_count":sum(r.values()),"total_checks":len(r)}
+
+def qualify_suite(date,venue,spec):
+ nums=[]
+ for part in spec.split(","):
+  if "-" in part:
+   a,b=map(int,part.split("-",1)); nums.extend(range(a,b+1))
+  else: nums.append(int(part))
+ nums=sorted(set(n for n in nums if 1<=n<=12))[:12]
+ results=[]
+ for n in nums:
+  try: results.append({"ok":True,**qualify_one(date,venue,n)})
+  except Exception as e: results.append({"ok":False,"race_no":n,"error":str(e)})
+ return {"version":VERSION,"date":date,"venue":venue,"requested":nums,"results":results,
+         "summary":{"tested":len(results),"transport_ok":sum(1 for x in results if x.get("ok")),
+                    "identity_ready":sum(1 for x in results if x.get("readiness",{}).get("identity")),
+                    "entry_ready":sum(1 for x in results if x.get("readiness",{}).get("entry")),
+                    "rider_stats_ready":sum(1 for x in results if x.get("readiness",{}).get("rider_stats")),
+                    "line_order_ready":sum(1 for x in results if x.get("readiness",{}).get("line_order")),
+                    "odds_ready":sum(1 for x in results if x.get("readiness",{}).get("odds")),
+                    "result_ready":sum(1 for x in results if x.get("readiness",{}).get("result"))}}
 
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
@@ -233,6 +273,10 @@ class S(BaseHTTPRequestHandler):
   jm=re.fullmatch(r"/v1/je-packet/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if jm:
    try:return self.j(200,je_packet(race(*jm.groups())))
+   except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
+  sm=re.fullmatch(r"/v1/qualify-suite/(\d{4}-\d{2}-\d{2})/([^/]+)/([0-9,-]+)",p)
+  if sm:
+   try:return self.j(200,qualify_suite(*sm.groups()))
    except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
   qm=re.fullmatch(r"/v1/qualify/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if qm:

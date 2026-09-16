@@ -1,25 +1,12 @@
 {
-  "version": "1.0.0-ic1",
+  "version": "1.0.0-ic1.1",
   "syntax": "PASS",
-  "integrated_candidate": true,
-  "preserved": [
-    "identity",
-    "entry",
-    "rider_stats",
-    "line_order",
-    "result",
-    "odds_integrity_guard"
-  ],
-  "new": [
-    "JE packet",
-    "qualification endpoint",
-    "independent readiness",
-    "pre/post separation"
-  ],
-  "not_ready": [
-    "line_groups",
-    "odds",
-    "production_failover"
-  ],
+  "changes": {
+    "pre_race_readiness": "FIXED",
+    "silent_wrong_data": "UNKNOWN_NOT_ASSUMED",
+    "odds_generic_page": "FIXED",
+    "rider_stats_5_9_layout": "HARDENED",
+    "qualification_suite": "ADDED"
+  },
   "production_ready": false
 }

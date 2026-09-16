@@ -1,24 +1,17 @@
-# JFE v1.0 Integrated Candidate IC1
+# JFE v1.0 Integrated Candidate IC1.1
 
-Integrated development line.
+Qualification hotfix. Not production-ready. Free Render compatible.
 
-Preserved qualified blocks:
-- Identity READY
-- Entry READY
-- RiderStats READY
-- Line Order QUALIFIED_ORDER
-- Result READY
-- RC3 Odds Integrity Guard
+Changes:
+- Correct pre-race readiness: mandatory core = Identity + Entry + RiderStats + Odds. `enriched_ready` additionally requires Line Order.
+- `silent_wrong_data` is no longer hard-coded false. It is `UNKNOWN` until external ground-truth qualification proves otherwise.
+- Generic/unbound Odds templates are classified `ODDS_GENERIC_PAGE`, not `JFE-05 SOURCE_CONFLICT`.
+- RiderStats parser broadened for 5-9 rider layouts while preserving exact Entry binding and fail-closed behavior.
+- Added compact qualification suite endpoint: `/v1/qualify-suite/YYYY-MM-DD/VENUE/1-10`.
+- Existing Identity/Entry/Line/Result/Odds integrity behavior retained.
 
-New integration:
-- `/v1/je-packet/{date}/{venue}/{race}`: normalized JE Race Packet.
-- `/v1/qualify/{date}/{venue}/{race}`: machine-readable per-block qualification.
-- Independent readiness flags: unqualified Line Groups and Odds cannot masquerade as READY.
-- Pre-race and post-race data are separated for leakage-safe JE learning.
-
-Still intentionally NOT READY:
-- Line group boundaries
-- Parsed/fresh live Odds
-- true multi-source production failover
-
-This candidate is for live qualification, not production.
+Still pending qualification:
+- Actual parsed/fresh Odds READY.
+- Explicit Line group boundaries.
+- True independent secondary-source Odds adapter/failover.
+- 50/100-race external ground-truth qualification.

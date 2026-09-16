@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-ic1.2"; START=time.time()
+VERSION="1.0.0-ic1.3"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -146,6 +146,34 @@ def odds_integrity(raw,rid):
  SNAPSHOTS.setdefault(rid,[]).append(snap);SNAPSHOTS[rid]=SNAPSHOTS[rid][-5:]
  ok=(occurrences>0 and len(vals)>0 and unique>0 and not conflict)
  return ok,conflict,snap
+KD_EVENT_BASE={
+ # Qualification resolver. Expand only after event identity is externally verified.
+ "2026-09-16|岸和田":"56202609140300",
+}
+def kd_url(date,venue,rno):
+ base=KD_EVENT_BASE.get(f"{date}|{venue}")
+ if not base:return None
+ return f"https://keirin.kdreams.jp/kishiwada/racedetail/{base}{int(rno):02d}/?pageType=odds"
+
+def normname(x):return re.sub(r"[　\\s]+","",x)
+
+def kd_odds_probe(raw,date,venue,rno,entry):
+ t=txt(raw); expected=f"{date[:4]}年{date[5:7]}月{date[8:10]}日"
+ # Bind source to date, venue, race number and every known entrant name.
+ name_hits=sum(1 for e in entry if normname(e["name"]) in normname(t))
+ identity=(expected in t and venue in t and f"{int(rno)}R" in t and name_hits==len(entry) and len(entry)>0)
+ # Conservative evidence from explicit popularity rows: combination + decimal odds.
+ pairs=re.findall(r"(?<![0-9])([1-9](?:-[1-9]){1,2})\\s+(\\d{1,4}\\.\\d)(?![0-9])",t)
+ # dedupe preserving first occurrence
+ seen=set(); data=[]
+ for comb,val in pairs:
+  key=(comb,val)
+  if key in seen:continue
+  seen.add(key); data.append({"combination":comb,"odds":float(val),"legs":comb.count("-")+1})
+ stamps=re.findall(r"(20\\d{2}/\\d{2}/\\d{2}\\s+\\d{2}:\\d{2})現在",t)
+ return {"identity_bound":identity,"entry_name_hits":name_hits,"entry_count":len(entry),
+         "odds_value_count":len(data),"data":data[:500],"source_timestamp":stamps[-1] if stamps else None}
+
 def race(date,venue,rno):
  vc=VENUES.get(venue)
  if not vc:raise ValueError("UNKNOWN_VENUE")
@@ -164,6 +192,23 @@ def race(date,venue,rno):
            identity_bound=snap["race_id_occurrences"]>0,integrity_pass=ok,snapshot=snap,parser_qualified=False)
   if err:ob["error"]=err
  except Exception as e:ob=block("PENDING",error=str(e),parser_qualified=False)
+ # Secondary Odds Adapter: fail over only when Primary is not READY/qualified.
+ if ob.get("status")!="READY":
+  ku=kd_url(date,venue,rno)
+  if ku:
+   try:
+    kr,k_lat,k_tr=fetch(ku,0); kp=kd_odds_probe(kr,date,venue,rno,riders if eok else [])
+    # IC1.3 qualifies source binding and parser evidence, but does not promote to READY
+    # until bet-type section mapping/freshness is validated across multiple races.
+    if kp["identity_bound"] and kp["odds_value_count"]>0:
+     ob=block("QUALIFYING","kdreams",acquired_at=now(),latency_ms=k_lat,transport=k_tr,
+              identity_bound=True,integrity_pass=True,parser_qualified=False,
+              source_timestamp=kp["source_timestamp"],odds_value_count=kp["odds_value_count"],
+              data=kp["data"],error="ODDS_BETTYPE_MAPPING_PENDING",failover_from="netkeirin")
+    else:
+     ob["secondary"]={"source":"kdreams","status":"PENDING",**kp}
+   except Exception as e:
+    ob["secondary"]={"source":"kdreams","status":"PENDING","error":str(e)}
  try:
   rr,rl,rt=fetch(urls["result"],15)
   result_rows,result_ok=parse_result(rr,riders if eok else [])
@@ -197,7 +242,7 @@ def readiness(packet):
   "identity": b["identity"]["status"]=="READY",
   "entry": b["entry"]["status"]=="READY",
   "rider_stats": b["rider_stats"]["status"]=="READY",
-  "line_order": b["line"]["status"]=="QUALIFIED_ORDER",
+  "line_order": (b["entry"]["status"]=="READY" and b["line"]["status"]=="QUALIFIED_ORDER" and b["line"].get("entry_bound") is True),
   "line_groups": bool(b["line"].get("group_boundaries_qualified")),
   "odds": b["odds"]["status"]=="READY",
   "result": b["result"]["status"]=="READY"
@@ -272,7 +317,7 @@ def failure_reason(packet, key):
   return {"status":b.get("status"),"rider_count":b.get("rider_count"),"entry_count":packet["blocks"].get("entry",{}).get("rider_count"),"entry_bound":b.get("entry_bound"),"validation":b.get("validation"),"missing_car_nos":sorted(set(x.get("car_no") for x in packet.get("riders",[]))-set(x.get("car_no") for x in b.get("rows",[]))),"error":b.get("error")}
  if key=="odds":
   sn=b.get("snapshot") or {}
-  return {"status":b.get("status"),"error":b.get("error"),"transport":b.get("transport"),"identity_bound":b.get("identity_bound"),"generic_page":sn.get("generic_page"),"race_id_occurrences":sn.get("race_id_occurrences"),"odds_value_count":sn.get("odds_value_count"),"unique_odds_values":sn.get("unique_odds_values")}
+  return {"status":b.get("status"),"source":b.get("source"),"error":b.get("error"),"transport":b.get("transport"),"identity_bound":b.get("identity_bound"),"generic_page":sn.get("generic_page"),"race_id_occurrences":sn.get("race_id_occurrences"),"odds_value_count":b.get("odds_value_count",sn.get("odds_value_count")),"unique_odds_values":sn.get("unique_odds_values"),"source_timestamp":b.get("source_timestamp"),"secondary":b.get("secondary")}
  if key=="line":
   return {"status":b.get("status"),"order":b.get("order"),"groups_ready":b.get("group_boundaries_qualified"),"validation":b.get("validation"),"error":b.get("error")}
  if key=="result":

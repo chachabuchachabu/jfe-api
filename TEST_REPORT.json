@@ -1,1 +1,1 @@
-{"version":"1.0.0-ic1.2","syntax":"PASS","changes":{"je_packet_core_readiness_fix":true,"failure_suite_endpoint":true,"missing_rider_diagnostics":true,"odds_generic_page_diagnostics":true},"production_ready":false,"note":"Parser changes remain fail-closed; no speculative source parsing added."}
+{"version":"1.0.0-ic1.3","syntax":"PASS","line_entry_dependency":true,"kdreams_secondary_odds":"QUALIFICATION_ONLY","odds_ready_promotion":false,"production_ready":false}

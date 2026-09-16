@@ -1,16 +1,12 @@
-# JFE v1.0 Integrated Candidate IC1.2
+# JFE v1.0 Integrated Candidate IC1.3
+Qualification candidate; not production ready.
 
-Qualification diagnostics hotfix.
+Changes from IC1.2:
+- Line Order readiness now requires Entry READY + explicit entry binding.
+- Adds a qualification-only KDreams Secondary Odds Adapter for the externally verified 2026-09-16 Kishiwada meeting.
+- Primary netkeirin generic odds pages trigger secondary probing.
+- Secondary odds must bind date/venue/race/entrant identities and contain explicit combination+decimal-odds evidence.
+- Secondary Odds remains QUALIFYING, not READY, until bet-type section mapping and freshness are validated across multiple races.
+- Silent wrong data remains UNKNOWN until external ground-truth qualification.
 
-Changes:
-- fixes JE packet pre_race core readiness: Identity + Entry + RiderStats + Odds are mandatory; Line Order is enrichment
-- adds `/v1/failures-suite/{date}/{venue}/{spec}` to report only NOT READY blocks and their reasons
-- RiderStats failures report missing car numbers
-- Odds failures expose generic-page / identity-binding / value-count evidence
-- keeps silent wrong data as UNKNOWN until external ground-truth qualification
-- does not guess Line group boundaries or fabricate Odds
-
-Example:
-`/v1/failures-suite/2026-09-16/岸和田/1-10`
-
-Not production ready. Secondary Odds adapter still requires source-route qualification.
+Safety: fail closed; no fabricated data; no paid services required.

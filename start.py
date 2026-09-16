@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-ic1.3"; START=time.time()
+VERSION="1.0.0-ic1.3.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -155,24 +155,59 @@ def kd_url(date,venue,rno):
  if not base:return None
  return f"https://keirin.kdreams.jp/kishiwada/racedetail/{base}{int(rno):02d}/?pageType=odds"
 
-def normname(x):return re.sub(r"[　\\s]+","",x)
+def normname(x):return re.sub(r"[　\s]+","",x)
 
 def kd_odds_probe(raw,date,venue,rno,entry):
- t=txt(raw); expected=f"{date[:4]}年{date[5:7]}月{date[8:10]}日"
- # Bind source to date, venue, race number and every known entrant name.
- name_hits=sum(1 for e in entry if normname(e["name"]) in normname(t))
- identity=(expected in t and venue in t and f"{int(rno)}R" in t and name_hits==len(entry) and len(entry)>0)
- # Conservative evidence from explicit popularity rows: combination + decimal odds.
- pairs=re.findall(r"(?<![0-9])([1-9](?:-[1-9]){1,2})\\s+(\\d{1,4}\\.\\d)(?![0-9])",t)
- # dedupe preserving first occurrence
+ t=txt(raw); y,m,d=map(int,date.split("-"))
+ # KDreams may render non-zero-padded Japanese dates. Match semantically, not by fixed text.
+ date_bound=bool(re.search(fr"{y}年\s*0?{m}月\s*0?{d}日",t))
+ venue_bound=(venue in t)
+ race_bound=bool(re.search(fr"(?<![0-9])0?{int(rno)}R(?![0-9])",t,re.I))
+ nt=normname(t); name_hits=sum(1 for e in entry if normname(e["name"]) in nt)
+ identity=(date_bound and venue_bound and race_bound and name_hits==len(entry) and len(entry)>0)
+ # Conservative evidence only. This is not promoted to READY until bet-type mapping is qualified.
+ pairs=re.findall(r"(?<![0-9])([1-9](?:-[1-9]){1,2})\s+(\d{1,4}\.\d)(?![0-9])",t)
  seen=set(); data=[]
  for comb,val in pairs:
   key=(comb,val)
   if key in seen:continue
   seen.add(key); data.append({"combination":comb,"odds":float(val),"legs":comb.count("-")+1})
- stamps=re.findall(r"(20\\d{2}/\\d{2}/\\d{2}\\s+\\d{2}:\\d{2})現在",t)
- return {"identity_bound":identity,"entry_name_hits":name_hits,"entry_count":len(entry),
-         "odds_value_count":len(data),"data":data[:500],"source_timestamp":stamps[-1] if stamps else None}
+ stamps=re.findall(r"(20\d{2}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})現在",t)
+ return {"identity_bound":identity,"date_bound":date_bound,"venue_bound":venue_bound,"race_bound":race_bound,
+         "entry_name_hits":name_hits,"entry_count":len(entry),"odds_value_count":len(data),"data":data[:500],
+         "source_timestamp":stamps[-1] if stamps else None,"content_bytes":len(raw.encode())}
+
+def stats_trace(raw,entry):
+ rows=[]
+ for e in entry:
+  matches=[]
+  for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>",raw,flags=re.S|re.I):
+   t=txt(tr)
+   if e["name"] in t:
+    cells=[txt(x) for x in re.findall(r"<td\b[^>]*>(.*?)</td>",tr,flags=re.S|re.I)]
+    matches.append({"text":t[:700],"cells":cells[:30],
+                    "scores":re.findall(r"(?<!\d)(\d{2,3}\.\d{1,2})(?!\d)",t),
+                    "percent_rates":re.findall(r"(\d{1,3}\.\d)%",t),
+                    "styles":re.findall(r"[逃追両]",t)})
+  rows.append({"car_no":e["car_no"],"name":e["name"],"matched_rows":len(matches),"evidence":matches[:3]})
+ return rows
+
+def odds_route_trace(date,venue,rno,entry):
+ vc=VENUES[venue];rid=date.replace("-","")+vc+f"{int(rno):02d}"
+ primary_url=f"https://keirin.netkeiba.com/odds/?race_id={rid}"
+ trace={"race_id":rid,"primary":{"source":"netkeirin","url":primary_url},"secondary":None}
+ try:
+  raw,lat,tr=fetch(primary_url,0); ok,conflict,snap=odds_integrity(raw,rid)
+  trace["primary"].update({"transport":tr,"latency_ms":lat,"integrity_pass":ok,"conflict":conflict,"snapshot":snap})
+ except Exception as e:trace["primary"].update({"error":str(e)})
+ ku=kd_url(date,venue,rno)
+ if ku:
+  sec={"source":"kdreams","url":ku};trace["secondary"]=sec
+  try:
+   raw,lat,tr=fetch(ku,0); probe=kd_odds_probe(raw,date,venue,rno,entry)
+   sec.update({"transport":tr,"latency_ms":lat,"probe":{k:v for k,v in probe.items() if k!="data"},"sample":probe.get("data",[])[:20]})
+  except Exception as e:sec["error"]=str(e)
+ return trace
 
 def race(date,venue,rno):
  vc=VENUES.get(venue)
@@ -343,6 +378,21 @@ def failure_suite(date,venue,spec):
  return {"version":VERSION,"date":date,"venue":venue,"requested":base["requested"],"summary":base["summary"],"failures":failures,
          "integrity_note":"Not-ready blocks are reported explicitly; silent wrong data remains UNKNOWN until external ground-truth qualification."}
 
+def trace_one(date,venue,rno):
+ vc=VENUES.get(venue)
+ if not vc:raise ValueError("UNKNOWN_VENUE")
+ rid=date.replace("-","")+vc+f"{int(rno):02d}"
+ entry_url=f"https://keirin.netkeiba.com/race/entry/?race_id={rid}"
+ raw,lat,tr=fetch(entry_url,0); entry=parse_entry(raw)
+ stats,stats_ok=parse_stats(raw,entry)
+ missing=sorted(set(x["car_no"] for x in entry)-set(x["car_no"] for x in stats))
+ return {"version":VERSION,"race_id":rid,"date":date,"venue":venue,"race_no":int(rno),
+         "entry":{"count":len(entry),"riders":entry,"transport":tr,"latency_ms":lat},
+         "rider_stats":{"parser_ok":stats_ok,"parsed_count":len(stats),"missing_car_nos":missing,
+                        "raw_row_trace":[x for x in stats_trace(raw,entry) if x["car_no"] in missing]},
+         "odds_route":odds_route_trace(date,venue,rno,entry),
+         "note":"Diagnostic evidence only. Secondary odds remains QUALIFYING until bet-type mapping/freshness is externally validated."}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -352,6 +402,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  tm=re.fullmatch(r"/v1/trace/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
+  if tm:
+   try:return self.j(200,trace_one(*tm.groups()))
+   except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
   jm=re.fullmatch(r"/v1/je-packet/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if jm:
    try:return self.j(200,je_packet(race(*jm.groups())))

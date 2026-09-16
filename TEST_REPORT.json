@@ -1,1 +1,11 @@
-{"version":"1.0.0-ic1.3","syntax":"PASS","line_entry_dependency":true,"kdreams_secondary_odds":"QUALIFICATION_ONLY","odds_ready_promotion":false,"production_ready":false}
+{
+  "version": "1.0.0-ic1.3.1",
+  "syntax": "PASS",
+  "production_ready": false,
+  "changes": [
+    "odds_route_trace",
+    "rider_stats_raw_row_trace",
+    "kdreams_regex_hotfix",
+    "fail_closed_preserved"
+  ]
+}

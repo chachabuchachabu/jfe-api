@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0-ic1.4-dev-b35",
+  "b35_new_tests": "6/6 PASS",
+  "compile": "PASS",
+  "status": "RENDER_ACQUISITION_TEST_PACKAGE_LOCAL_PASS",
+  "render_live_fetch": "NOT_YET_EXECUTED"
+}

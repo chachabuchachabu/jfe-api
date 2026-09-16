@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-ic1.1"; START=time.time()
+VERSION="1.0.0-ic1.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -205,7 +205,10 @@ def readiness(packet):
 
 def je_packet(packet):
  r=readiness(packet)
- pre_ok=all(r[k] for k in ("identity","entry","rider_stats","line_order"))
+ # Core pre-race readiness preserves the established mandatory semantics:
+ # Identity + Entry + RiderStats + Odds. Line order is an enrichment layer.
+ core_ok=all(r[k] for k in ("identity","entry","rider_stats","odds"))
+ enriched_ok=core_ok and r["line_order"]
  return {
   "schema":"JFE-JE-RACE-PACKET/1.0",
   "jfe_version":VERSION,
@@ -261,6 +264,40 @@ def qualify_suite(date,venue,spec):
                     "odds_ready":sum(1 for x in results if x.get("readiness",{}).get("odds")),
                     "result_ready":sum(1 for x in results if x.get("readiness",{}).get("result"))}}
 
+def failure_reason(packet, key):
+ b=packet["blocks"].get(key,{})
+ if key=="entry":
+  return {"status":b.get("status"),"rider_count":b.get("rider_count"),"validation":b.get("validation"),"error":b.get("error")}
+ if key=="rider_stats":
+  return {"status":b.get("status"),"rider_count":b.get("rider_count"),"entry_count":packet["blocks"].get("entry",{}).get("rider_count"),"entry_bound":b.get("entry_bound"),"validation":b.get("validation"),"missing_car_nos":sorted(set(x.get("car_no") for x in packet.get("riders",[]))-set(x.get("car_no") for x in b.get("rows",[]))),"error":b.get("error")}
+ if key=="odds":
+  sn=b.get("snapshot") or {}
+  return {"status":b.get("status"),"error":b.get("error"),"transport":b.get("transport"),"identity_bound":b.get("identity_bound"),"generic_page":sn.get("generic_page"),"race_id_occurrences":sn.get("race_id_occurrences"),"odds_value_count":sn.get("odds_value_count"),"unique_odds_values":sn.get("unique_odds_values")}
+ if key=="line":
+  return {"status":b.get("status"),"order":b.get("order"),"groups_ready":b.get("group_boundaries_qualified"),"validation":b.get("validation"),"error":b.get("error")}
+ if key=="result":
+  return {"status":b.get("status"),"finisher_count":len(b.get("finishers",[])),"validation":b.get("validation"),"error":b.get("error")}
+ return {"status":b.get("status"),"validation":b.get("validation"),"error":b.get("error")}
+
+def failure_suite(date,venue,spec):
+ base=qualify_suite(date,venue,spec)
+ failures=[]
+ for x in base["results"]:
+  if not x.get("ok"):
+   failures.append({"race_no":x.get("race_no"),"transport_error":x.get("error")}); continue
+  n=x["race_no"]
+  try:
+   p=race(date,venue,n); r=readiness(p)
+   bad=[]
+   for k in ("identity","entry","rider_stats","line_order","line_groups","odds","result"):
+    if not r[k]:
+     source_key="line" if k in ("line_order","line_groups") else k
+     bad.append({"block":k,"diagnostic":failure_reason(p,source_key)})
+   failures.append({"race_no":n,"race_id":p["race"]["race_id"],"not_ready":bad})
+  except Exception as e: failures.append({"race_no":n,"transport_error":str(e)})
+ return {"version":VERSION,"date":date,"venue":venue,"requested":base["requested"],"summary":base["summary"],"failures":failures,
+         "integrity_note":"Not-ready blocks are reported explicitly; silent wrong data remains UNKNOWN until external ground-truth qualification."}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -273,6 +310,10 @@ class S(BaseHTTPRequestHandler):
   jm=re.fullmatch(r"/v1/je-packet/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if jm:
    try:return self.j(200,je_packet(race(*jm.groups())))
+   except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
+  fm=re.fullmatch(r"/v1/failures-suite/(\d{4}-\d{2}-\d{2})/([^/]+)/([0-9,-]+)",p)
+  if fm:
+   try:return self.j(200,failure_suite(*fm.groups()))
    except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
   sm=re.fullmatch(r"/v1/qualify-suite/(\d{4}-\d{2}-\d{2})/([^/]+)/([0-9,-]+)",p)
   if sm:

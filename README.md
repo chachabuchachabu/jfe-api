@@ -1,17 +1,16 @@
-# JFE v1.0 Integrated Candidate IC1.1
+# JFE v1.0 Integrated Candidate IC1.2
 
-Qualification hotfix. Not production-ready. Free Render compatible.
+Qualification diagnostics hotfix.
 
 Changes:
-- Correct pre-race readiness: mandatory core = Identity + Entry + RiderStats + Odds. `enriched_ready` additionally requires Line Order.
-- `silent_wrong_data` is no longer hard-coded false. It is `UNKNOWN` until external ground-truth qualification proves otherwise.
-- Generic/unbound Odds templates are classified `ODDS_GENERIC_PAGE`, not `JFE-05 SOURCE_CONFLICT`.
-- RiderStats parser broadened for 5-9 rider layouts while preserving exact Entry binding and fail-closed behavior.
-- Added compact qualification suite endpoint: `/v1/qualify-suite/YYYY-MM-DD/VENUE/1-10`.
-- Existing Identity/Entry/Line/Result/Odds integrity behavior retained.
+- fixes JE packet pre_race core readiness: Identity + Entry + RiderStats + Odds are mandatory; Line Order is enrichment
+- adds `/v1/failures-suite/{date}/{venue}/{spec}` to report only NOT READY blocks and their reasons
+- RiderStats failures report missing car numbers
+- Odds failures expose generic-page / identity-binding / value-count evidence
+- keeps silent wrong data as UNKNOWN until external ground-truth qualification
+- does not guess Line group boundaries or fabricate Odds
 
-Still pending qualification:
-- Actual parsed/fresh Odds READY.
-- Explicit Line group boundaries.
-- True independent secondary-source Odds adapter/failover.
-- 50/100-race external ground-truth qualification.
+Example:
+`/v1/failures-suite/2026-09-16/岸和田/1-10`
+
+Not production ready. Secondary Odds adapter still requires source-route qualification.

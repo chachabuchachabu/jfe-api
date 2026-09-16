@@ -1,0 +1,90 @@
+{
+  "schema": "JFE-CROSS-VENUE-LIVE-MATRIX/1.0",
+  "target_date": "2026-09-16",
+  "sample_scope": "3 live race pages / 2 venues",
+  "matrix": {
+    "records": [
+      {
+        "venue": "防府",
+        "race": "1R",
+        "state": "BLOCKED",
+        "blockers": [
+          "JFE-B09_RIDER_FEATURES",
+          "JFE-B10_LINE_FEATURES",
+          "JFE-B06_QUALITY"
+        ],
+        "source_url": "https://keirin.kdreams.jp/hofu/racedetail/6320260915020001/?kakeshikiType=3rentan&pageType=odds",
+        "evidence": {
+          "bet_type": "3連単",
+          "timestamp": "2026-09-16 10:25",
+          "cars": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "venue": "防府",
+        "race": "9R",
+        "state": "BLOCKED",
+        "blockers": [
+          "JFE-B09_RIDER_FEATURES",
+          "JFE-B10_LINE_FEATURES",
+          "JFE-B06_QUALITY"
+        ],
+        "source_url": "https://keirin.kdreams.jp/gamboo/keirin-kaisai/race-card/odds/6320260915/63202609150200/9/3rentan/",
+        "evidence": {
+          "bet_type": "3連単",
+          "timestamp": "2026-09-16 14:36",
+          "cars": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "venue": "別府",
+        "race": "6R",
+        "state": "BLOCKED",
+        "blockers": [
+          "JFE-B09_RIDER_FEATURES",
+          "JFE-B10_LINE_FEATURES",
+          "JFE-B06_QUALITY"
+        ],
+        "source_url": "https://keirin.kdreams.jp/gamboo/keirin-kaisai/race-card/odds/8620260916/86202609160100/06/3rentan/",
+        "evidence": {
+          "bet_type": "3連単",
+          "timestamp": "2026-09-16 11:57",
+          "cars": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      }
+    ],
+    "blocker_counts": {
+      "JFE-B09_RIDER_FEATURES": 3,
+      "JFE-B10_LINE_FEATURES": 3,
+      "JFE-B06_QUALITY": 3
+    },
+    "available": 0,
+    "blocked": 3
+  },
+  "conclusion": "Live race binding, entries, trifecta odds and source timestamps are evidenced in this sample. Strict JE remains blocked because evidence-derived rider features, line cohesion/features and six quality metrics are not yet acquired.",
+  "status": "CROSS_VENUE_LIVE_EVIDENCE_PARTIAL_PASS"
+}

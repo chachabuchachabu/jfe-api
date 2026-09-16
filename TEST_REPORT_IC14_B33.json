@@ -1,0 +1,19 @@
+{
+  "prior_baseline_b1_b32": "192/192 PASS",
+  "b33_new_tests": "8/8 PASS",
+  "aggregate_baseline": "200/200 PASS",
+  "compile_pass": true,
+  "status": "HISTORICAL_SNAPSHOT_RECONCILIATION_LOCAL_PASS",
+  "live_recovery_7R_12R": "NOT_EXECUTED_IN_B33",
+  "fixture_recovery": "6 synthetic individual-race snapshots",
+  "safety": [
+    "exact date binding",
+    "exact venue binding",
+    "race binding",
+    "complete-result guard",
+    "source-conflict block",
+    "immutable list evidence"
+  ],
+  "next": "B34 acquisition test branch package: external-runner fetch contract + GitHub-ready acquisition smoke test.",
+  "note": "200/200 is inherited baseline plus B33, not a fresh all-suite rerun."
+}

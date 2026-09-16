@@ -1,0 +1,10 @@
+{
+  "prior_baseline_b1_b21": "114/114 PASS",
+  "b22_new_tests": "4/4 PASS",
+  "aggregate_baseline": "118/118 PASS",
+  "compile_pass": true,
+  "real_web_evidence_captured": true,
+  "scope": "daily page + Kishiwada racecard evidence",
+  "nationwide_full_ingress_e2e": "NOT_YET_COMPLETE",
+  "status": "LIVE_EVIDENCE_GATE_PARTIAL_PASS"
+}

@@ -1,0 +1,1 @@
+# IC1.4 DEV-B4\n- Added source-agnostic daily venue discovery.\n- Added dynamic race discovery (no fixed race count).\n- Added Daily Manifest and granular Recovery Queue.\n- Empty discovery remains UNKNOWN, never auto NOT_PUBLISHED.\n- Preserves B1-B3 functionality.\n

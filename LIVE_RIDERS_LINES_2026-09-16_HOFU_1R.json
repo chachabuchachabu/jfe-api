@@ -1,0 +1,66 @@
+{
+  "schema": "JFE-B27-LIVE-RACECARD-EVIDENCE/1.0",
+  "target_date": "2026-09-16",
+  "venue": "防府",
+  "race": "1R",
+  "rider_evidence": [
+    {
+      "car_no": 1,
+      "name": "永井 清史",
+      "score": 82.14,
+      "style": "両",
+      "state": "AVAILABLE",
+      "evidence": "KDreams 防府1R 2026-09-16"
+    },
+    {
+      "car_no": 2,
+      "name": "池田 浩士",
+      "score": 86.5,
+      "style": "追",
+      "state": "AVAILABLE",
+      "evidence": "KDreams 防府1R 2026-09-16"
+    }
+  ],
+  "line_evidence": {
+    "state": "AVAILABLE",
+    "ordered": [
+      {
+        "car_no": 3,
+        "role": "先行"
+      },
+      {
+        "car_no": 6,
+        "role": "追込"
+      },
+      {
+        "car_no": 2,
+        "role": "追上"
+      },
+      {
+        "car_no": 4,
+        "role": "追上"
+      },
+      {
+        "car_no": 1,
+        "role": "追込"
+      },
+      {
+        "car_no": 5,
+        "role": "押え先"
+      },
+      {
+        "car_no": 7,
+        "role": "追込"
+      }
+    ],
+    "raw": "← 3先行 6追込 2追上 4追上 1追込 5押え先 7追込",
+    "cohesion_state": "UNKNOWN"
+  },
+  "gate": {
+    "state": "BLOCKED",
+    "reasons": [
+      "JFE-B10_LINE_FEATURES"
+    ]
+  },
+  "finding": "KDreams racecard supplies source-backed rider score/style and ordered tactical line roles. Johnny cohesion and other model-specific rider features are not source facts and remain UNKNOWN/BLOCKED."
+}

@@ -1,0 +1,27 @@
+{
+  "prior_baseline_b1_b30": "176/176 PASS",
+  "b31_new_tests": "8/8 PASS",
+  "aggregate_baseline": "184/184 PASS",
+  "compile_pass": true,
+  "status": "HISTORICAL_WEB_ADAPTER_PARTIAL_LIVE_PASS",
+  "real_official_result_evidence": "1 race (Maebashi 2026-08-30 1R)",
+  "confirmed": {
+    "winner": 3,
+    "top3": [
+      3,
+      1,
+      2
+    ],
+    "line_order": [
+      2,
+      5,
+      4,
+      7,
+      3,
+      1,
+      6
+    ]
+  },
+  "not_yet_ready_for_backtest": "Full source_rows with B28-required feature inputs have not yet been materialized for 20+ official races.",
+  "note": "184/184 is inherited baseline plus B31, not a fresh all-suite rerun."
+}

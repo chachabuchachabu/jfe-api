@@ -1,0 +1,20 @@
+{
+  "prior_baseline_b1_b25": "138/138 PASS",
+  "b26_new_tests": "7/7 PASS",
+  "aggregate_baseline": "145/145 PASS",
+  "compile_pass": true,
+  "status": "CROSS_VENUE_LIVE_EVIDENCE_PARTIAL_PASS",
+  "live_sample": "3 races / 2 venues",
+  "confirmed": [
+    "race binding",
+    "entries",
+    "trifecta odds",
+    "odds timestamp"
+  ],
+  "current_blockers": [
+    "JFE-B09_RIDER_FEATURES",
+    "JFE-B10_LINE_FEATURES",
+    "JFE-B06_QUALITY"
+  ],
+  "note": "Aggregate is inherited baseline plus B26, not a fresh all-suite rerun."
+}

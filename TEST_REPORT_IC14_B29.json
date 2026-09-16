@@ -1,0 +1,11 @@
+{
+  "prior_baseline_b1_b28": "160/160 PASS",
+  "b29_new_tests": "8/8 PASS",
+  "aggregate_baseline": "168/168 PASS",
+  "compile_pass": true,
+  "status": "BACKTEST_HARNESS_CODED_LOCAL_TEST_PASS",
+  "real_historical_backtest": "NOT_YET_EXECUTED",
+  "predictive_merit": "NOT_EVALUATED",
+  "next": "Acquire a sufficiently large immutable historical dataset, run BACKTEST, then SHADOW/OOS only if evidence supports it.",
+  "note": "168/168 is inherited baseline plus B29, not a fresh all-suite rerun."
+}

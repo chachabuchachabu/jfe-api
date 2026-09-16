@@ -1,0 +1,30 @@
+{
+  "schema": "JFE-HIST-WEB-EVIDENCE/1.0",
+  "target_date": "2026-08-30",
+  "venue": "前橋",
+  "source_url": "https://keirin.kdreams.jp/maebashi/raceresult/22202608270400/",
+  "acquired_at": "2026-09-16T20:00:00+09:00",
+  "races": [
+    {
+      "race_no": 1,
+      "winner": 3,
+      "winner_name": "小堺 浩二",
+      "top3": [
+        3,
+        1,
+        2
+      ],
+      "line_order": [
+        2,
+        5,
+        4,
+        7,
+        3,
+        1,
+        6
+      ],
+      "evidence": "KDreams result page rendered by web retrieval"
+    }
+  ],
+  "state": "AVAILABLE"
+}

@@ -1,0 +1,10 @@
+{
+  "prior_baseline_b1_b27": "152/152 PASS",
+  "b28_new_tests": "8/8 PASS",
+  "aggregate_baseline": "160/160 PASS",
+  "compile_pass": true,
+  "status": "FEATURE_ENGINEERING_DISCOVERED_LOCAL_PASS",
+  "production_eligible": false,
+  "next": "BACKTEST -> SHADOW TEST -> OUT-OF-SAMPLE -> ADOPT/REJECT",
+  "note": "Aggregate is inherited, not a fresh all-suite rerun."
+}

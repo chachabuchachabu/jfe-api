@@ -1,0 +1,20 @@
+{
+  "target_date": "2026-09-16",
+  "web_verified": {
+    "venues": [
+      "伊東",
+      "防府",
+      "別府",
+      "岸和田",
+      "青森",
+      "いわき平",
+      "武雄",
+      "立川"
+    ],
+    "kishiwada_races": 11,
+    "kishiwada_event_base": "56202609140300"
+  },
+  "direct_runtime_http_verified": false,
+  "status": "DEV",
+  "blocker": "DIRECT_RUNTIME_HTTP_NOT_VERIFIED"
+}

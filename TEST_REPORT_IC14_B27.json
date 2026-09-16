@@ -1,0 +1,17 @@
+{
+  "prior_baseline_b1_b26": "145/145 PASS",
+  "b27_new_tests": "7/7 PASS",
+  "aggregate_baseline": "152/152 PASS",
+  "compile_pass": true,
+  "status": "RACECARD_RIDER_LINE_EVIDENCE_PARTIAL_PASS",
+  "proved": [
+    "source-backed rider score/style adapter",
+    "full ordered tactical line binding for Hofu 1R"
+  ],
+  "still_blocked": [
+    "JFE-B10_LINE_FEATURES (cohesion not published)",
+    "remaining Johnny rider model features require defined derivation, not guessing",
+    "JFE-B06_QUALITY"
+  ],
+  "note": "Aggregate is inherited baseline plus B27, not a fresh all-suite rerun."
+}

@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0-ic1.4-dev-b13",
+  "summary": {
+    "prior_regression_b1_b12": "63/63 PASS",
+    "b13_new_tests": "8/8 PASS",
+    "aggregate": "71/71 PASS",
+    "compile_pass": true
+  },
+  "live_network_status": "NOT_CLAIMED"
+}

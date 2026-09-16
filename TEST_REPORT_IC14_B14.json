@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0-ic1.4-dev-b14",
+  "summary": {
+    "prior_regression_b1_b13": "71/71 PASS",
+    "b14_new_tests": "6/6 PASS",
+    "aggregate": "77/77 PASS",
+    "compile_pass": true,
+    "live_structure_verified": "KDreams 2026-09-16 daily + Kishiwada racecard"
+  }
+}

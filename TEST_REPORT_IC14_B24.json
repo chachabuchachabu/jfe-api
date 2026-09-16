@@ -1,0 +1,14 @@
+{
+  "prior_baseline_b1_b23": "123/123 PASS",
+  "b24_new_tests": "8/8 PASS",
+  "aggregate_baseline": "131/131 PASS",
+  "compile_pass": true,
+  "status": "STRICT_PRE_JE_GATE_CODED_LOCAL_TEST_PASS",
+  "closed": [
+    "JFE-B05_LINE",
+    "JFE-B06_QUALITY",
+    "JFE-B07_FRESHNESS"
+  ],
+  "remaining": "Legacy B8/B9 packet-ready shape still requires dedicated E2E adapter regression.",
+  "note": "Aggregate is inherited baseline plus B24; not a fresh rerun."
+}

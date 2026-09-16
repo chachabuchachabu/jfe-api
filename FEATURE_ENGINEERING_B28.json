@@ -1,0 +1,155 @@
+{
+  "schema": "JFE-JE-FEATURES/0.1",
+  "feature_version": "b28-linear-v1",
+  "sample": {
+    "state": "CANDIDATE",
+    "feature_schema": "JFE-JE-FEATURES/0.1",
+    "feature_version": "b28-linear-v1",
+    "riders": [
+      {
+        "state": "AVAILABLE",
+        "car_no": 1,
+        "rating": 55.35,
+        "form": 23.9,
+        "tactical": 29.549999999999997,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 2,
+        "rating": 66.25,
+        "form": 29.1,
+        "tactical": 35.95,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 3,
+        "rating": 75.0,
+        "form": 38.0,
+        "tactical": 46.0,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 4,
+        "rating": 45.0,
+        "form": 18.0,
+        "tactical": 23.5,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 5,
+        "rating": 70.0,
+        "form": 34.0,
+        "tactical": 41.5,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 6,
+        "rating": 60.0,
+        "form": 26.200000000000003,
+        "tactical": 32.900000000000006,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      },
+      {
+        "state": "AVAILABLE",
+        "car_no": 7,
+        "rating": 50.0,
+        "form": 20.8,
+        "tactical": 26.6,
+        "venue_fit": 70.0,
+        "distance_fit": 72.0,
+        "opponent_context": 68.0,
+        "feature_version": "b28-linear-v1",
+        "source_evidence": [
+          "fixture"
+        ]
+      }
+    ],
+    "lines": [
+      {
+        "state": "AVAILABLE",
+        "members": [
+          3,
+          6
+        ],
+        "cohesion": 93.45,
+        "feature_version": "b28-linear-v1"
+      },
+      {
+        "state": "AVAILABLE",
+        "members": [
+          2
+        ],
+        "cohesion": 100.0,
+        "feature_version": "b28-linear-v1"
+      },
+      {
+        "state": "AVAILABLE",
+        "members": [
+          4
+        ],
+        "cohesion": 100.0,
+        "feature_version": "b28-linear-v1"
+      },
+      {
+        "state": "AVAILABLE",
+        "members": [
+          1
+        ],
+        "cohesion": 100.0,
+        "feature_version": "b28-linear-v1"
+      },
+      {
+        "state": "AVAILABLE",
+        "members": [
+          5,
+          7
+        ],
+        "cohesion": 92.55,
+        "feature_version": "b28-linear-v1"
+      }
+    ],
+    "validation_stage": "DISCOVERED_FEATURE",
+    "production_eligible": false
+  }
+}

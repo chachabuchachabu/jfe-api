@@ -1,0 +1,13 @@
+{
+  "prior_baseline_b1_b24": "131/131 PASS",
+  "b25_new_tests": "7/7 PASS",
+  "aggregate_baseline": "138/138 PASS",
+  "compile_pass": true,
+  "status": "PARSER_TO_RACEINPUT_E2E_LOCAL_PASS",
+  "proved": "parse_kd_odds_sections -> non-empty trifecta market -> strict evidence -> actual Johnny RaceInput",
+  "new_fail_closed": [
+    "JFE-B09_RIDER_FEATURES",
+    "JFE-B10_LINE_FEATURES"
+  ],
+  "note": "Aggregate is inherited baseline plus B25, not a fresh all-suite rerun."
+}

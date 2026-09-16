@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0-ic1.4-dev-b17",
+  "summary": {
+    "prior_regression_b1_b16": "90/90 PASS",
+    "b17_new_tests": "6/6 PASS",
+    "aggregate": "96/96 PASS",
+    "compile_pass": true,
+    "live_web_evidence": "2026-09-16 KDreams 8 venues; Kishiwada 11 races verified",
+    "rc_status": "DEV",
+    "rc_blocker": "DIRECT_RUNTIME_HTTP_NOT_VERIFIED"
+  }
+}

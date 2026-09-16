@@ -1,0 +1,11 @@
+{
+  "prior_baseline_b1_b29": "168/168 PASS",
+  "b30_new_tests": "8/8 PASS",
+  "aggregate_baseline": "176/176 PASS",
+  "compile_pass": true,
+  "status": "HISTORICAL_DATASET_BUILDER_LOCAL_PASS",
+  "fixture_races": 20,
+  "real_official_historical_races": 0,
+  "real_backtest": "NOT_YET_EXECUTED",
+  "note": "176/176 is inherited baseline plus B30, not a fresh all-suite rerun."
+}

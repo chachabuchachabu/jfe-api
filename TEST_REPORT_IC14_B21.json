@@ -1,0 +1,8 @@
+{
+  "prior_baseline_b1_b20": "109/109 PASS",
+  "b21_new_tests": "5/5 PASS",
+  "aggregate_baseline": "114/114 PASS",
+  "compile_pass": true,
+  "status": "CODED_LOCAL_TEST_PASS",
+  "real_web_artifact": "NOT_YET_CAPTURED"
+}

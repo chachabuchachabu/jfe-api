@@ -1,0 +1,83 @@
+{
+  "schema": "JFE-LIVE-COVERAGE-EVIDENCE/1.0",
+  "target_date": "2026-09-16",
+  "source": "KDreams",
+  "gate": {
+    "target_date": "2026-09-16",
+    "venues": [
+      {
+        "venue": "伊東",
+        "state": "AVAILABLE",
+        "race_count": 9,
+        "source_url": "https://keirin.kdreams.jp/ito/racecard/37202609140300/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "防府",
+        "state": "AVAILABLE",
+        "race_count": 12,
+        "source_url": "https://keirin.kdreams.jp/hofu/racecard/63202609150200/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "別府",
+        "state": "AVAILABLE",
+        "race_count": 12,
+        "source_url": "https://keirin.kdreams.jp/beppu/racecard/86202609160100/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "岸和田",
+        "state": "AVAILABLE",
+        "race_count": 11,
+        "source_url": "https://keirin.kdreams.jp/kishiwada/racecard/56202609140300/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "青森",
+        "state": "AVAILABLE",
+        "race_count": 9,
+        "source_url": "https://keirin.kdreams.jp/aomori/racecard/12202609140300/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "いわき平",
+        "state": "AVAILABLE",
+        "race_count": 11,
+        "source_url": "https://keirin.kdreams.jp/iwakitaira/racecard/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_SCHEDULE+RACE_DETAIL"
+      },
+      {
+        "venue": "武雄",
+        "state": "AVAILABLE",
+        "race_count": 7,
+        "source_url": "https://keirin.kdreams.jp/takeo/racecard/84202609160100/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      },
+      {
+        "venue": "立川",
+        "state": "AVAILABLE",
+        "race_count": 11,
+        "source_url": "https://keirin.kdreams.jp/tachikawa/racecard/28202609160100/",
+        "target_date": "2026-09-16",
+        "evidence_level": "LIVE_RACECARD"
+      }
+    ],
+    "verified_venues": 8,
+    "total_venues": 8,
+    "coverage_rate": 1.0,
+    "state": "AVAILABLE"
+  },
+  "limitations": [
+    "Evidence is sourced from current web retrieval; raw webpage bodies were not transferred into the Python runtime.",
+    "This proves nationwide race-program coverage, not full rider/odds ingestion for every race."
+  ],
+  "artifact_sha256": "82193adcc483c395ed35ebc407d14bbd098e219f55076cff95c5103b6e5305a7"
+}

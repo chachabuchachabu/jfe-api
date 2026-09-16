@@ -1,0 +1,7 @@
+{
+  "prior_regression": "99/99 PASS",
+  "b19": "4/4 PASS",
+  "aggregate": "103/103 PASS",
+  "compile_pass": true,
+  "status": "DEV_PENDING_REAL_INGRESS_E2E"
+}

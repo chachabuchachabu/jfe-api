@@ -1,0 +1,128 @@
+{
+  "schema": "JFE-HIST-MEETING-BATCH/1.0",
+  "target_date": "2026-08-30",
+  "venue": "前橋",
+  "source_url": "https://keirin.kdreams.jp/maebashi/raceresult/22202608270400/",
+  "acquired_at": "2026-09-16T20:30:00+09:00",
+  "races": [
+    {
+      "race_no": 1,
+      "top3": [
+        3,
+        1,
+        2
+      ],
+      "winner": 3,
+      "line_order": [
+        2,
+        5,
+        4,
+        7,
+        3,
+        1,
+        6
+      ]
+    },
+    {
+      "race_no": 2,
+      "top3": [
+        3,
+        1,
+        8
+      ],
+      "winner": 3,
+      "line_order": [
+        6,
+        4,
+        1,
+        2,
+        5,
+        7,
+        8,
+        3
+      ]
+    },
+    {
+      "race_no": 3,
+      "top3": [
+        2,
+        4,
+        8
+      ],
+      "winner": 2,
+      "line_order": [
+        4,
+        8,
+        1,
+        2,
+        5,
+        6,
+        3,
+        7
+      ]
+    },
+    {
+      "race_no": 4,
+      "top3": [
+        1,
+        4,
+        2
+      ],
+      "winner": 1,
+      "line_order": [
+        9,
+        1,
+        7,
+        4,
+        2,
+        6,
+        3,
+        8,
+        5
+      ]
+    },
+    {
+      "race_no": 5,
+      "top3": [
+        2,
+        9,
+        1
+      ],
+      "winner": 2,
+      "line_order": [
+        1,
+        5,
+        2,
+        7,
+        3,
+        8,
+        6,
+        4,
+        9
+      ]
+    },
+    {
+      "race_no": 6,
+      "top3": [
+        5,
+        1,
+        9
+      ],
+      "winner": 5,
+      "line_order": [
+        5,
+        1,
+        9,
+        7,
+        2,
+        3,
+        8,
+        4,
+        6
+      ]
+    }
+  ],
+  "rejected": [],
+  "race_count": 6,
+  "state": "AVAILABLE"
+}

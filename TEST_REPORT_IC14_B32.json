@@ -1,0 +1,12 @@
+{
+  "prior_baseline_b1_b31": "184/184 PASS",
+  "b32_new_tests": "8/8 PASS",
+  "aggregate_baseline": "192/192 PASS",
+  "compile_pass": true,
+  "status": "HISTORICAL_MEETING_BATCH_PARTIAL_LIVE_PASS",
+  "official_result_races_materialized": 6,
+  "meeting_has_12_races": true,
+  "why_not_12": "The currently retrieved result-list snapshot explicitly marks 7R-12R as result-unconfirmed, while individual 12R result evidence exists separately. B32 refuses to merge inconsistent snapshots without a reconciliation step.",
+  "next": "B33 historical snapshot reconciliation + individual-race recovery for 7R-12R, then source-row extraction.",
+  "note": "192/192 is inherited baseline plus B32, not a fresh all-suite rerun."
+}

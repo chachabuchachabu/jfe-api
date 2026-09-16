@@ -1,0 +1,32 @@
+{
+  "schema": "JFE-INGRESS-ARTIFACT/1.0",
+  "target_date": "2026-09-16",
+  "source": "kdreams",
+  "created_at": "2026-09-16T18:39:00+09:00",
+  "bundle": {
+    "schema": "JFE-INGRESS-BUNDLE/1.0",
+    "target_date": "2026-09-16",
+    "daily": {
+      "schema": "JFE-EXTERNAL-INGRESS/1.0",
+      "source": "kdreams",
+      "source_url": "https://example.test/daily",
+      "acquired_at": "2026-09-16T18:39:00+09:00",
+      "transport": "EXTERNAL_WEB",
+      "content_sha256": "097abc520a782d9e300008ff5646b0c0b59175337ad0819dc53594a8d553ef79",
+      "text": "2026年9月16日\n### 岸和田競輪 最終日"
+    },
+    "venues": {
+      "岸和田": {
+        "schema": "JFE-EXTERNAL-INGRESS/1.0",
+        "source": "kdreams",
+        "source_url": "https://example.test/kishiwada",
+        "acquired_at": "2026-09-16T18:39:00+09:00",
+        "transport": "EXTERNAL_WEB",
+        "content_sha256": "25bfebbcd52ca35294214254c27d2aca4a0aa5d41164bdde0e5c8a3fe7af9c72",
+        "text": "# 岸和田競輪 出走表一覧\n2026年09月16日 出走表一覧\n * 1R一般\n発走\n 11:01\n締切\n 10:56\n◎ | | 4 | 1 | 1 | 相川巧 | 埼玉 | 37 | 98 | A3 | 両\n○ | | 4 | 5 | 5 | 吉川誠 | 神奈川 | 45 | 86 | A3 | 両\n"
+      }
+    },
+    "errors": []
+  },
+  "artifact_sha256": "5ce1ff343079a03b53bc55fa007e53d055ec362f98e1bd34fbc072f4d755984a"
+}

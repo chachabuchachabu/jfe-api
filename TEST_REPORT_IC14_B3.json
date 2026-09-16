@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0-ic1.4-dev-b3",
+  "tests": {
+    "test_ic14_b.py": {
+      "returncode": 0,
+      "output": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py\", line 32317, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\ntest_missing_five_is_partial_not_not_published (__main__.T.test_missing_five_is_partial_not_not_published) ... ok\ntest_seven_complete (__main__.T.test_seven_complete) ... ok\ntest_six_complete (__main__.T.test_six_complete) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.003s\n\nOK\n"
+    },
+    "test_ic14_c.py": {
+      "returncode": 0,
+      "output": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py\", line 32317, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\ntest_bet_type_binding_and_values (__main__.OddsTests.test_bet_type_binding_and_values) ... ok\ntest_explicit_unpublished_only (__main__.OddsTests.test_explicit_unpublished_only) ... ok\ntest_invalid_car_is_rejected (__main__.OddsTests.test_invalid_car_is_rejected) ... ok\ntest_no_heading_never_infers_bet_type (__main__.OddsTests.test_no_heading_never_infers_bet_type) ... ok\ntest_partial_bet_states_can_coexist (__main__.OddsTests.test_partial_bet_states_can_coexist) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.002s\n\nOK\n"
+    },
+    "test_ic14_b3.py": {
+      "returncode": 0,
+      "output": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py\", line 32317, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\ntest_explicit_unpublished_is_not_published (__main__.B3Tests.test_explicit_unpublished_is_not_published) ... ok\ntest_no_data_is_not_not_published (__main__.B3Tests.test_no_data_is_not_not_published) ... ok\ntest_odds_bet_types_are_separate (__main__.B3Tests.test_odds_bet_types_are_separate) ... ok\ntest_reg_b001_yoshikawa_is_bound (__main__.B3Tests.test_reg_b001_yoshikawa_is_bound) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.005s\n\nOK\n"
+    }
+  },
+  "live_network_test": {
+    "attempted": true,
+    "target": "2026-09-16 岸和田 1R-3R",
+    "result": "BLOCKED_BY_RUNTIME_NETWORK",
+    "error": "JFE-01 FETCH_FAIL:URLError",
+    "note": "No live-site PASS is claimed."
+  },
+  "summary": {
+    "passed_suites": 3,
+    "total_suites": 3,
+    "individual_tests": 12,
+    "individual_passed": 12
+  }
+}

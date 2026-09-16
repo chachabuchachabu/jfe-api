@@ -1,0 +1,40 @@
+{
+  "schema": "JFE-WEB-EVIDENCE/1.0",
+  "target_date": "2026-09-16",
+  "acquired_at": "2026-09-16T18:39:00+09:00",
+  "daily": {
+    "source": "kdreams",
+    "source_url": "https://keirin.kdreams.jp/kaisai/2026/09/16",
+    "acquired_at": "2026-09-16T18:39:00+09:00",
+    "content_sha256": "f48ee928c3989d927efaefca6f3fc740c4d040fe3730cd6aaab14a0651b9a3fc",
+    "text": "# 競輪 開催レース情報\n本日 2026年9月16日 開催一覧\n伊東Ｇ３\n防府Ｆ１\n別府Ｆ１\n岸和田Ｆ２\n青森Ｆ２\nいわき平Ｆ２\n武雄Ｆ２\n立川Ｆ２\n### 伊東競輪 ミッドナイトＧ３×ＨＰＣＪＣ 最終日\n### 防府競輪 第６回石村正利記念杯 2日目\n### 別府競輪 沖縄食糧石川ひゃくまん穀杯 初日\n### 岸和田競輪 前検日コメならウィンチケット杯 最終日\n### 青森競輪 前検日コメならウィンチケット杯 最終日\n### いわき平競輪 福島民報杯・ウィンチケット杯 2日目\n"
+  },
+  "kishiwada": {
+    "source": "kdreams",
+    "source_url": "https://keirin.kdreams.jp/kishiwada/racecard/56202609140300",
+    "acquired_at": "2026-09-16T18:39:00+09:00",
+    "content_sha256": "879e510fdd313db5a7fc2c2872fb8c892cec7a96abec82558997fd772bbde561",
+    "text": "# 岸和田競輪 出走表一覧\n2026年09月16日 出走表一覧\n1Rチャレンジ一般\n発走 11:01\n締切 10:56\n注 | | 4 | 1 | 1 | 相川巧 | 埼玉 | 37 | 98 | A3 | 両\n× | | 3 | 2 | 2 | 佐藤有輝 | 神奈川 | 47 | 85 | A3 | 追\n◎ | | 3 | 3 | 3 | 小泉俊也 | 静岡 | 50 | 77 | A3 | 両\n▲ | | 5 | 4 | 4 | 落合豊 | 茨城 | 55 | 69 | A3 | 追\n○ | | 4 | 5 | 5 | 吉川誠 | 神奈川 | 45 | 86 | A3 | 両\n△ | | 4 | 6 | 6 | 長谷川辰徳 | 埼玉 | 45 | 89 | A3 | 追\n並び予想\n← 1先行 6追込 4追上 3押え先 5追込 2追込\nオッズ\n3連単 2車単 3連複 2車複 ワイド\n"
+  },
+  "verified_facts": {
+    "daily": {
+      "state": "AVAILABLE",
+      "target_date": "2026-09-16",
+      "venues": [
+        "伊東",
+        "防府",
+        "別府",
+        "岸和田",
+        "青森",
+        "いわき平"
+      ]
+    },
+    "reg_b001": {
+      "state": "AVAILABLE",
+      "date_bound": true,
+      "race_1_bound": true,
+      "car5_yoshikawa_bound": true
+    }
+  },
+  "artifact_sha256": "5474bb0371e5ee947b8d7b01fc4dab2c4d8729b130e0a4441a8caee99971c2ad"
+}

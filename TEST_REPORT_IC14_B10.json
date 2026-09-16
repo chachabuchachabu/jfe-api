@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0-ic1.4-dev-b10",
+  "summary": {
+    "suites": 10,
+    "passed_suites": 10,
+    "individual_tests": 50,
+    "compile_pass": true
+  },
+  "validation_note": "All 10 suites / 50 tests completed PASS in the preceding full regression run. The subprocess py_compile phase then hung in environment startup; syntax was revalidated in-process and B10 suite rerun PASS.",
+  "live_network_status": "NOT_CLAIMED"
+}

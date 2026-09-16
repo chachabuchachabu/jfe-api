@@ -1,0 +1,11 @@
+{
+  "prior_baseline_b1_b22": "118/118 PASS",
+  "b23_new_tests": "5/5 PASS",
+  "aggregate_baseline": "123/123 PASS",
+  "compile_pass": true,
+  "live_venue_coverage": "8/8",
+  "live_race_program_coverage": "82 races",
+  "coverage_rate": 1.0,
+  "status": "NATIONWIDE_LIVE_COVERAGE_GATE_PASS",
+  "full_rider_odds_e2e": "NOT_YET_COMPLETE"
+}

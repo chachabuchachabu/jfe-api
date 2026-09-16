@@ -1,0 +1,16 @@
+{
+  "prior_baseline_b1_b33": "200/200 PASS",
+  "b34_new_tests": "8/8 PASS",
+  "aggregate_baseline": "208/208 PASS",
+  "status": "GITHUB_ACQUISITION_TEST_PACKAGE_LOCAL_PASS",
+  "github_connector_check": "CONNECTED_BUT_NO_ACCESSIBLE_REPOSITORIES",
+  "github_actions_execution": "NOT_EXECUTED",
+  "live_external_fetch": "NOT_EXECUTED",
+  "contents": [
+    "tools/acquisition_smoke.py",
+    ".github/workflows/acquisition-smoke.yml",
+    "ACQUISITION_FETCH_CONTRACT_B34.json"
+  ],
+  "next": "Make a GitHub repository accessible to the connected GitHub app, then push B34 acquisition-test branch and execute workflow_dispatch.",
+  "note": "208/208 is inherited baseline plus B34, not a fresh all-suite rerun."
+}

@@ -1,0 +1,60 @@
+{
+  "kdreams_daily": {
+    "state": "ERROR",
+    "url": "https://keirin.kdreams.jp/kaisai/2026/09/16/",
+    "error": "DIRECT_HTTP_FETCH_FAILED",
+    "acquired_at": "2026-09-16T08:31:49.942126+00:00",
+    "attempts": [
+      {
+        "attempt": 1,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 16.1
+      },
+      {
+        "attempt": 2,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 5007.0
+      },
+      {
+        "attempt": 3,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 2.5
+      }
+    ]
+  },
+  "kdreams_kishiwada": {
+    "state": "ERROR",
+    "url": "https://keirin.kdreams.jp/kishiwada/racecard/56202609140300/",
+    "error": "DIRECT_HTTP_FETCH_FAILED",
+    "acquired_at": "2026-09-16T08:32:00.707392+00:00",
+    "attempts": [
+      {
+        "attempt": 1,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 5006.3
+      },
+      {
+        "attempt": 2,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 1.6
+      },
+      {
+        "attempt": 3,
+        "ok": false,
+        "error_type": "URLError",
+        "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+        "elapsed_ms": 5006.6
+      }
+    ]
+  }
+}

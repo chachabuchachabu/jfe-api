@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0-ic1.4-dev-b16",
+  "summary": {
+    "prior_regression_b1_b15": "84/84 PASS",
+    "b16_new_tests": "6/6 PASS",
+    "aggregate": "90/90 PASS",
+    "compile_pass": true,
+    "web_structure_rechecked": "2026-09-16 KDreams current pages",
+    "runtime_direct_http": "NOT_CLAIMED"
+  }
+}

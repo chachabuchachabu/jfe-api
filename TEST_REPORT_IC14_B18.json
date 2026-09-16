@@ -1,0 +1,70 @@
+{
+  "version": "1.0.0-ic1.4-dev-b18",
+  "summary": {
+    "prior_regression_b1_b17": "96/96 PASS",
+    "b18_new_tests": "3/3 PASS",
+    "aggregate": "99/99 PASS",
+    "compile_pass": true,
+    "direct_runtime_http_verified": false,
+    "probe_states": {
+      "kdreams_daily": {
+        "state": "ERROR",
+        "binding": null,
+        "http_status": null,
+        "error": "DIRECT_HTTP_FETCH_FAILED",
+        "attempts": [
+          {
+            "attempt": 1,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 16.1
+          },
+          {
+            "attempt": 2,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 5007.0
+          },
+          {
+            "attempt": 3,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 2.5
+          }
+        ]
+      },
+      "kdreams_kishiwada": {
+        "state": "ERROR",
+        "binding": null,
+        "http_status": null,
+        "error": "DIRECT_HTTP_FETCH_FAILED",
+        "attempts": [
+          {
+            "attempt": 1,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 5006.3
+          },
+          {
+            "attempt": 2,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 1.6
+          },
+          {
+            "attempt": 3,
+            "ok": false,
+            "error_type": "URLError",
+            "error": "<urlopen error [Errno -3] Temporary failure in name resolution>",
+            "elapsed_ms": 5006.6
+          }
+        ]
+      }
+    }
+  }
+}

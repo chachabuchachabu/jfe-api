@@ -1,0 +1,2529 @@
+{
+  "schema": "JFE-HISTORICAL-DATASET/1.0",
+  "races": [
+    {
+      "race_id": "HIST-001",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 1,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "a518db2b1ab15c3cacd266124f6f350b4ec3dc4dd31dda947fbe00d0152652fc"
+    },
+    {
+      "race_id": "HIST-002",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 2,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "e1436bd155ff40ed2cdbab4ae4051e373282cbb8e9c0f91b9e1cc2f1d99f628b"
+    },
+    {
+      "race_id": "HIST-003",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 3,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "e06a5bb8ad9e7b6b494c92aec3e58a2681a3c583f60f21607d91b2d6db7424f5"
+    },
+    {
+      "race_id": "HIST-004",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 4,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "fc9b35ceac7e84a479466d9ffbb57f98171d4af66f8493acf20112df699ac866"
+    },
+    {
+      "race_id": "HIST-005",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 5,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "e4827a532fc398f2e48a09dd102b6d9f57358b55bf351ef0ac1316870a566cd4"
+    },
+    {
+      "race_id": "HIST-006",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 6,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "40d63531fc5e3808c975dfb14264778fd4a44c9639af235fab5af8676555940e"
+    },
+    {
+      "race_id": "HIST-007",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 7,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "1a431ad488d566dd76a581235efdb18afb8a0dcc439d6a61661cb38d28428c0d"
+    },
+    {
+      "race_id": "HIST-008",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 8,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "82b34893565471df9aeb313d057d7d2e33aae67274190c8a8acceaf3b3fd2d54"
+    },
+    {
+      "race_id": "HIST-009",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 9,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "65d399d20ab5228c9b785ee14890e4bbd161caca9c8632530e33f9e593e473b3"
+    },
+    {
+      "race_id": "HIST-010",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 10,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "505768812d8910e04203df2ef4cf3c754add9dbaff18f1114a1a5584361c7c82"
+    },
+    {
+      "race_id": "HIST-011",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 11,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "fe76804f8e7e11168996daf3fe156c1907f805a7475a40ab942c4591be2086f9"
+    },
+    {
+      "race_id": "HIST-012",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 12,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "c3d6d56e6a038af711fbf721ec4804875d222fd9d8b00ecc5335e4eda9d9e8fe"
+    },
+    {
+      "race_id": "HIST-013",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 13,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "b82201f5cc052207da69a29008aa66d3ee000539da867cfe66b5d48c2f4d612c"
+    },
+    {
+      "race_id": "HIST-014",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 14,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "06c9ff6a67db089c9bb02bef88bea9b979529ebd6018aa814fa17180dd71a33a"
+    },
+    {
+      "race_id": "HIST-015",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 15,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "a2678d272ee40433131579398bc5a2f7fe2ead6131aec3a0387a14761d1f6b31"
+    },
+    {
+      "race_id": "HIST-016",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 16,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "df6af212ccdbdc1cd6331dce538f2f5ff247257cf2c456a0e4056428cadfb8e4"
+    },
+    {
+      "race_id": "HIST-017",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 17,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "04c542f75c419bf43d61e88c0fda2d33d997926fe81b6ecd17f573ec6ab40f6f"
+    },
+    {
+      "race_id": "HIST-018",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 18,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "043b65b54704511cfbe73c0071f3b053bef0f71d973e520b1ac263f4b2761d10"
+    },
+    {
+      "race_id": "HIST-019",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 19,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "0c8258baac26829280123913b19f357f476f28ca289e0fcd15abb08ee3fb069a"
+    },
+    {
+      "race_id": "HIST-020",
+      "target_date": "2026-08-30",
+      "venue": "TEST",
+      "race_no": 20,
+      "source_rows": [
+        {
+          "car_no": 1,
+          "score": 73,
+          "win_rate": 7,
+          "top2_rate": 13,
+          "top3_rate": 24,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 2,
+          "score": 76,
+          "win_rate": 9,
+          "top2_rate": 16,
+          "top3_rate": 28,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 3,
+          "score": 79,
+          "win_rate": 11,
+          "top2_rate": 19,
+          "top3_rate": 32,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 4,
+          "score": 82,
+          "win_rate": 13,
+          "top2_rate": 22,
+          "top3_rate": 36,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 5,
+          "score": 85,
+          "win_rate": 15,
+          "top2_rate": 25,
+          "top3_rate": 40,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 6,
+          "score": 88,
+          "win_rate": 17,
+          "top2_rate": 28,
+          "top3_rate": 44,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        },
+        {
+          "car_no": 7,
+          "score": 91,
+          "win_rate": 19,
+          "top2_rate": 31,
+          "top3_rate": 48,
+          "venue_rate": 70,
+          "distance_rate": 72,
+          "opponent_context": 68,
+          "evidence": [
+            "fixture"
+          ]
+        }
+      ],
+      "lines": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "winner": 7,
+      "source_url": "https://example.invalid/evidence",
+      "acquired_at": "2026-09-16T20:00:00+09:00",
+      "provenance": {
+        "source_url": "https://example.invalid/evidence",
+        "acquired_at": "2026-09-16T20:00:00+09:00",
+        "evidence": [
+          "fixture-only"
+        ],
+        "parser_version": "b30-test"
+      },
+      "content_sha256": "17b27f095f0727f4ad65b5aad70240166c6df49e790ba3e8c664ea0a6435635b"
+    }
+  ],
+  "rejected": [],
+  "race_count": 20,
+  "rejected_count": 0,
+  "dataset_sha256": "3b0cbff4078a9c1ba6e7f0adba4120527e99a7674985733bdfe9276600f24a45"
+}

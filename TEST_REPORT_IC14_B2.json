@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0-ic1.4-dev-b2",
+  "status": "LOCAL_TEST_PASS",
+  "suites": {
+    "IC1.4-B": {"passed": 3, "failed": 0},
+    "IC1.4-C": {"passed": 5, "failed": 0}
+  },
+  "total": {"passed": 8, "failed": 0},
+  "notes": [
+    "Synthetic/local parser regression only; live-site integration is not claimed.",
+    "NOT_PUBLISHED is emitted only with explicit source evidence.",
+    "Unbound odds-like numbers remain UNKNOWN and are not promoted."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "JFE-ACQUISITION-FETCH-CONTRACT/1.0",
+  "required": [
+    "source_url",
+    "acquired_at",
+    "http_status",
+    "content_type",
+    "byte_length",
+    "content_sha256"
+  ],
+  "rules": [
+    "No NOT_PUBLISHED from transport failure",
+    "Preserve exact source URL",
+    "SHA-256 raw response bytes",
+    "Timezone-aware acquired_at",
+    "One URL failure must be reported, not fabricated"
+  ]
+}

@@ -1,0 +1,216 @@
+{
+  "schema": "JFE-FEATURE-BACKTEST/0.1",
+  "feature_version": "b28-linear-v1",
+  "status": "BACKTEST_HARNESS_LOCAL_PASS",
+  "dataset_type": "SYNTHETIC_REGRESSION_ONLY",
+  "predictive_merit": "NOT_EVALUATED",
+  "result": {
+    "schema": "JFE-FEATURE-BACKTEST/0.1",
+    "feature_version": "b28-linear-v1",
+    "sample_size": 12,
+    "top1_accuracy": 0.5833333333333334,
+    "top3_recall": 1.0,
+    "rows": [
+      {
+        "race_id": "SYN-01",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-02",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-03",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-04",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-05",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-06",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-07",
+        "state": "EVALUATED",
+        "winner": 7,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": true,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-08",
+        "state": "EVALUATED",
+        "winner": 6,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": false,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-09",
+        "state": "EVALUATED",
+        "winner": 6,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": false,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-10",
+        "state": "EVALUATED",
+        "winner": 6,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": false,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-11",
+        "state": "EVALUATED",
+        "winner": 6,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": false,
+        "top3_hit": true
+      },
+      {
+        "race_id": "SYN-12",
+        "state": "EVALUATED",
+        "winner": 6,
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "top1_hit": false,
+        "top3_hit": true
+      }
+    ],
+    "validation_stage": "BACKTEST",
+    "production_eligible": false
+  },
+  "comparison": {
+    "state": "INSUFFICIENT_EVIDENCE",
+    "reason": "MIN_SAMPLE_20",
+    "production_eligible": false
+  },
+  "warning": "Synthetic fixtures validate mechanics only. They must not be used to claim predictive improvement or promote the feature."
+}

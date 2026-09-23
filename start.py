@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b44.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b45"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -572,6 +572,60 @@ def compact_entry_binding(target_date):
       "state":x.get("state"),"race_count":x.get("race_count"),"available_race_count":x.get("available_race_count"),
       "races":rows,"recovery_count":len(x.get("recovery_queue",[])),"fabricated_data":False}
 
+# ===== DEV-B45 Entry Integrity Gate =====
+def validate_entry_integrity(binding):
+    entries=(binding or {}).get("entries") or []
+    errors=[]; warnings=[]
+    cars=[]; names=[]
+    field_states=[]
+    for e in entries:
+        car=e.get("car_no"); name=e.get("rider_name")
+        f={"car_no":car,"name":name,"state":"AVAILABLE","errors":[]}
+        if not isinstance(car,int) or car <= 0: f["errors"].append("INVALID_CAR_NUMBER")
+        if not isinstance(name,str) or not name.strip(): f["errors"].append("EMPTY_RIDER_NAME")
+        if not isinstance(e.get("age"),int) or e.get("age") <= 0: f["errors"].append("INVALID_AGE")
+        if not isinstance(e.get("term"),int) or e.get("term") <= 0: f["errors"].append("INVALID_TERM")
+        grade=e.get("grade")
+        if not isinstance(grade,str) or not re.fullmatch(r"(?:S|A|L)\d+",grade): f["errors"].append("INVALID_GRADE")
+        score=e.get("race_score")
+        if not isinstance(score,(int,float)) or isinstance(score,bool): f["errors"].append("INVALID_RACE_SCORE")
+        if f["errors"]: f["state"]="ERROR"; errors.extend("CAR_%s:%s"%(car,x) for x in f["errors"])
+        cars.append(car); names.append(name); field_states.append(f)
+    if not entries: errors.append("NO_BOUND_ENTRIES")
+    valid_cars=[x for x in cars if isinstance(x,int) and x>0]
+    if len(valid_cars)!=len(set(valid_cars)): errors.append("DUPLICATE_CAR_NUMBER")
+    valid_names=[x.strip() for x in names if isinstance(x,str) and x.strip()]
+    if len(valid_names)!=len(set(valid_names)): errors.append("DUPLICATE_RIDER_NAME")
+    # Do not assume a fixed rider count or contiguous 1..N field.
+    source_expected=(binding or {}).get("expected_car_numbers") or []
+    retrieved=(binding or {}).get("retrieved_car_numbers") or []
+    if sorted(source_expected)!=sorted(retrieved): errors.append("SOURCE_RETRIEVED_CAR_SET_MISMATCH")
+    if sorted(valid_cars)!=sorted(retrieved): errors.append("BOUND_CAR_SET_MISMATCH")
+    return {"schema":"JFE-ENTRY-INTEGRITY/0.1","state":"AVAILABLE" if not errors else "ERROR",
+      "entry_count":len(entries),"active_car_numbers":sorted(valid_cars),
+      "source_expected_car_numbers":sorted(source_expected),"retrieved_car_numbers":sorted(retrieved),
+      "unique_car_numbers":len(valid_cars)==len(set(valid_cars)),
+      "unique_rider_names":len(valid_names)==len(set(valid_names)),
+      "field_states":field_states,"errors":errors,"warnings":warnings,
+      "withdrawal_state":"UNKNOWN","withdrawals":[],
+      "note":"Withdrawal is not inferred without explicit source evidence; fixed rider count/contiguous car assumptions are prohibited."}
+
+def live_entry_integrity(target_date):
+    base=live_entry_binding(target_date); races=[]; recovery=[]
+    for r in base.get("races",[]):
+        b=r.get("entry_binding") or {}
+        gate=validate_entry_integrity(b) if r.get("state")=="AVAILABLE" else {"schema":"JFE-ENTRY-INTEGRITY/0.1","state":"ERROR","errors":["ENTRY_BINDING_NOT_AVAILABLE"],"withdrawal_state":"UNKNOWN","withdrawals":[]}
+        rec={"kaisai_date_id":r.get("kaisai_date_id"),"venue_code":r.get("venue_code"),"race_no":r.get("race_no"),
+          "state":gate["state"],"entry_count":gate.get("entry_count",0),"active_car_numbers":gate.get("active_car_numbers",[]),
+          "withdrawal_state":gate.get("withdrawal_state"),"errors":gate.get("errors",[]),"integrity":gate}
+        if gate["state"]!="AVAILABLE": recovery.append({"kaisai_date_id":r.get("kaisai_date_id"),"race_no":r.get("race_no"),"reason":"ENTRY_INTEGRITY_FAILED","errors":gate.get("errors",[])})
+        races.append(rec)
+    ok=sum(r.get("state")=="AVAILABLE" for r in races)
+    return {"schema":"JFE-LIVE-ENTRY-INTEGRITY-GATE/0.1","service":"JFE","version":VERSION,"target_date":target_date,
+      "state":"AVAILABLE" if races and ok==len(races) else ("PARTIAL" if ok else "ERROR"),"acquired_at":now(),
+      "race_count":len(races),"available_race_count":ok,"races":races,"recovery_queue":recovery,
+      "fixed_rider_count_assumption":False,"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -1019,6 +1073,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  ei=re.fullmatch(r"/v1/entry-integrity/(\d{4}-\d{2}-\d{2})",p)
+  if ei:
+   result=live_entry_integrity(ei.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   eb=re.fullmatch(r"/v1/entry-binding/(\d{4}-\d{2}-\d{2})",p)
   if eb:
    result=compact_entry_binding(eb.group(1))

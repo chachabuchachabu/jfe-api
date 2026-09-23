@@ -7,7 +7,7 @@ FIX='''<table class="racecard_table"><tr><th>車番</th><th>選手名</th></tr>
 <table class="racecard_table none"><tr class="n1"><td class="num"><span>1</span></td><td class="rider">DUP<br>広島/1/1</td></tr></table>'''
 class T(unittest.TestCase):
  def test_ast(self): ast.parse(S)
- def test_version(self): self.assertIn('dev-b44',S)
+ def test_version(self): self.assertIn('dev-b45',S)
  def test_endpoint(self): self.assertIn('/v1/entry-binding/',S)
  def test_parse(self):
   x=ns["parse_primary_racecard_entries"](FIX); self.assertEqual(x["state"],"AVAILABLE"); self.assertEqual(x["retrieved_car_numbers"],[1,5])

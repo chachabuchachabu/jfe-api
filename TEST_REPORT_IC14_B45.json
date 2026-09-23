@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0-ic1.4-dev-b45",
+  "tests": "34/34 PASS",
+  "compile": "PASS",
+  "status": "ENTRY_INTEGRITY_GATE_LOCAL_PASS",
+  "render_live_integrity": "NOT_YET_EXECUTED"
+}

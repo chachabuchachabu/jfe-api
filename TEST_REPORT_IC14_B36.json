@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b36",
+  "new_tests": "7/7 PASS",
+  "compile": "PASS",
+  "status": "RENDER_PUBLIC_ACQUISITION_ENDPOINT_LOCAL_PASS",
+  "render_live_endpoint": "NOT_YET_EXECUTED",
+  "critical_fix": "SERVER_START_MOVED_TO_EOF"
+}

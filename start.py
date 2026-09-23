@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote
-VERSION="1.0.0-ic1.4-dev-b24"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b36"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -488,6 +488,26 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  if p=="/v1/acquisition/test":
+   url=os.getenv("JFE_ACQUISITION_TEST_URL","https://keirin.kdreams.jp/")
+   acquired_at=now(); t=time.time()
+   try:
+    q=urllib.request.Request(url,headers={"User-Agent":"JFE-Acquisition-Test/0.3","Cache-Control":"no-cache"})
+    with urllib.request.urlopen(q,timeout=20) as x:
+     body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
+    result={"schema":"JFE-ACQUISITION-EVIDENCE/1.2","service":"JFE","version":VERSION,
+            "state":"AVAILABLE","source_url":url,"acquired_at":acquired_at,"transport":"RENDER_HTTP",
+            "http_status":status,"content_type":ctype,"byte_length":len(body),
+            "content_sha256":hashlib.sha256(body).hexdigest(),"elapsed_ms":round((time.time()-t)*1000,1),
+            "fabricated_data":False}
+    print("JFE_ACQUISITION_RESULT "+json.dumps(result,ensure_ascii=False),flush=True)
+    return self.j(200,result)
+   except Exception as e:
+    result={"schema":"JFE-ACQUISITION-EVIDENCE/1.2","service":"JFE","version":VERSION,
+            "state":"ERROR","source_url":url,"acquired_at":acquired_at,"transport":"RENDER_HTTP",
+            "error_type":type(e).__name__,"error":str(e),"fabricated_data":False}
+    print("JFE_ACQUISITION_RESULT "+json.dumps(result,ensure_ascii=False),flush=True)
+    return self.j(503,result)
   tm=re.fullmatch(r"/v1/trace/(\d{4}-\d{2}-\d{2})/([^/]+)/(\d{1,2})",p)
   if tm:
    try:return self.j(200,trace_one(*tm.groups()))
@@ -514,7 +534,7 @@ class S(BaseHTTPRequestHandler):
    except Exception as e:return self.j(503,{"service":"JFE","version":VERSION,"status":"BLOCKED","error":str(e),"fabricated_data":False})
   self.j(404,{"error":"NOT_FOUND"})
  def log_message(self,f,*a):pass
-if __name__=="__main__":ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),S).serve_forever()
+# DEV-B36: server start moved to EOF so all integrated modules load before serving.
 
 # ===== IC1.4-A Daily Discovery (DEV-B4) =====
 class DiscoveredRace:
@@ -1857,3 +1877,8 @@ def reconciliation_gate(recon, expected_race_numbers=None):
             return {"state":"PARTIAL","reason":"RACE_COVERAGE_INCOMPLETE",
                     "missing":sorted(exp-got),"unexpected":sorted(got-exp)}
     return {"state":"AVAILABLE","race_count":len(recon.get("races",[]))}
+
+
+# DEV-B36 actual production server start after all integrated definitions.
+if __name__=="__main__":
+ ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),S).serve_forever()

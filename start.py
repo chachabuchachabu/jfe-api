@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b43.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b43.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -487,6 +487,82 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B43.2 DOM Structure Probe =====
+def _compact_html(x, limit=420):
+    return re.sub(r"\s+"," ",x).strip()[:limit]
+
+def dom_structure_probe(raw):
+    """Bounded diagnostics only: expose structural evidence, never infer entries."""
+    classes=[]
+    for m in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']',raw,re.I):
+        for c in m.group(1).split():
+            if c not in classes: classes.append(c)
+    ids=[]
+    for x in re.findall(r'id\s*=\s*["\']([^"\']+)["\']',raw,re.I):
+        if x not in ids: ids.append(x)
+    tables=[]
+    for m in re.finditer(r"<table\b[^>]*>",raw,re.I):
+        a=m.start(); end=raw.find("</table>",a)
+        frag=raw[a:(end+8 if end!=-1 else min(len(raw),a+1800))]
+        tables.append(_compact_html(frag,700))
+        if len(tables)>=8: break
+    # Search source text around likely entry/rider labels and profile-ish tokens.
+    contexts=[]
+    pats=[r"車番",r"選手名",r"選手",r"級班",r"競走得点",r"府県",r"期別",r"racer",r"senshu",r"profile"]
+    for pat in pats:
+        for m in re.finditer(pat,raw,re.I):
+            a=max(0,m.start()-260); b=min(len(raw),m.end()+520)
+            x=_compact_html(raw[a:b],650)
+            if x and x not in contexts: contexts.append(x)
+            if len(contexts)>=16: break
+        if len(contexts)>=16: break
+    # Attribute names can reveal JS/data binding without dumping the body.
+    data_attrs=[]
+    for x in re.findall(r"\b(data-[a-zA-Z0-9_-]+)\s*=",raw):
+        if x not in data_attrs: data_attrs.append(x)
+    return {"table_count":len(re.findall(r"<table\b",raw,re.I)),
+            "tr_count":len(re.findall(r"<tr\b",raw,re.I)),
+            "td_count":len(re.findall(r"<td\b",raw,re.I)),
+            "sample_classes":classes[:80],"sample_ids":ids[:40],
+            "data_attributes":data_attrs[:40],"table_samples":tables,
+            "keyword_contexts":contexts}
+
+def live_dom_probe(target_date):
+    """Fetch only one source-bound race per verified venue to keep output compact."""
+    base=live_race_verification(target_date)
+    out=[]; recovery=[]
+    for venue in base.get("venues",[]):
+        if venue.get("state")!="VERIFIED_VENUE" or not venue.get("races"): continue
+        race_no=venue["races"][0]
+        identity={}
+        for ev in venue.get("evidence",[]): identity.update(ev.get("race_identity_evidence") or {})
+        urls=identity.get(race_no) or identity.get(str(race_no)) or []
+        url=canonical_racedetail_url(urls)
+        rec={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),
+             "race_no":race_no,"race_url":url,"state":"UNKNOWN"}
+        if not url:
+            rec.update({"state":"ERROR","error_type":"RACE_BINDING_ERROR"}); out.append(rec); continue
+        try:
+            q=urllib.request.Request(url,headers={"User-Agent":"JFE-DOM-Probe/0.1",
+                "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+            with urllib.request.urlopen(q,timeout=20) as x:
+                body=x.read(); status=getattr(x,"status",None)
+            raw=body.decode("utf-8","replace")
+            rec.update({"state":"AVAILABLE" if status==200 else "ERROR","http_status":status,
+                        "byte_length":len(body),"content_sha256":hashlib.sha256(body).hexdigest(),
+                        "dom":dom_structure_probe(raw)})
+        except Exception as e:
+            rec.update({"state":"ERROR","error_type":type(e).__name__,"error":str(e)})
+            recovery.append({"kaisai_date_id":venue.get("kaisai_date_id"),"race_no":race_no,
+                             "reason":"DOM_PROBE_FETCH_ERROR"})
+        out.append(rec)
+    return {"schema":"JFE-DOM-STRUCTURE-PROBE/0.1","service":"JFE","version":VERSION,
+            "target_date":target_date,"state":"AVAILABLE" if out and all(x.get("state")=="AVAILABLE" for x in out) else "PARTIAL",
+            "acquired_at":now(),"sample_policy":"FIRST_SOURCE_BOUND_RACE_PER_VERIFIED_VENUE",
+            "sample_count":len(out),"samples":out,"recovery_queue":recovery,
+            "parser_promotion":"NONE_DIAGNOSTIC_ONLY","fabricated_data":False}
+
 # ===== DEV-B43.1 Compact Entry Diagnostic =====
 def compact_entry_diagnostic(target_date):
     """Run B43, but return only the evidence needed to design the binding parser."""
@@ -859,6 +935,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  dp=re.fullmatch(r"/v1/dom-probe/(\d{4}-\d{2}-\d{2})",p)
+  if dp:
+   result=live_dom_probe(dp.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   es=re.fullmatch(r"/v1/entry-summary/(\d{4}-\d{2}-\d{2})",p)
   if es:
    result=compact_entry_diagnostic(es.group(1))

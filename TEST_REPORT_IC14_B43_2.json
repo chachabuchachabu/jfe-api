@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b43.2",
+  "new_tests": "13/13 PASS",
+  "compile": "PASS",
+  "status": "DOM_STRUCTURE_PROBE_LOCAL_PASS",
+  "render_live_dom_probe": "NOT_YET_EXECUTED",
+  "next_gate": "derive source-backed car-number -> rider binding contract"
+}

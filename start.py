@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b45"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b46"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -626,6 +626,65 @@ def live_entry_integrity(target_date):
       "race_count":len(races),"available_race_count":ok,"races":races,"recovery_queue":recovery,
       "fixed_rider_count_assumption":False,"fabricated_data":False}
 
+
+# ===== DEV-B46 Entry Snapshot / Change Detection =====
+ENTRY_SNAPSHOT_HISTORY={}
+
+def _entry_snapshot_payload(race):
+    gate=race.get("integrity") or {}
+    fields=[]
+    for f in gate.get("field_states",[]):
+        fields.append({"car_no":f.get("car_no"),"rider_name":f.get("name"),"state":f.get("state")})
+    return {"kaisai_date_id":race.get("kaisai_date_id"),"venue_code":race.get("venue_code"),
+      "race_no":race.get("race_no"),"state":race.get("state"),"active_car_numbers":gate.get("active_car_numbers",[]),
+      "withdrawal_state":gate.get("withdrawal_state","UNKNOWN"),"withdrawals":gate.get("withdrawals",[]),"entries":fields}
+
+def _entry_snapshot_hash(payload):
+    raw=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+def compare_entry_snapshots(previous,current):
+    if previous is None: return {"state":"BASELINE","changed":False,"changes":[]}
+    changes=[]
+    p={e.get("car_no"):e for e in previous.get("payload",{}).get("entries",[]) if isinstance(e.get("car_no"),int)}
+    c={e.get("car_no"):e for e in current.get("payload",{}).get("entries",[]) if isinstance(e.get("car_no"),int)}
+    for car in sorted(set(c)-set(p)): changes.append({"type":"ADDED","car_no":car,"current":c[car]})
+    for car in sorted(set(p)-set(c)): changes.append({"type":"REMOVED","car_no":car,"previous":p[car],"withdrawal_inferred":False})
+    for car in sorted(set(p)&set(c)):
+        if p[car].get("rider_name")!=c[car].get("rider_name"):
+            changes.append({"type":"RIDER_CHANGED","car_no":car,"previous":p[car].get("rider_name"),"current":c[car].get("rider_name")})
+        for fld in ("state",):
+            if p[car].get(fld)!=c[car].get(fld): changes.append({"type":"FIELD_CHANGED","car_no":car,"field":fld,"previous":p[car].get(fld),"current":c[car].get(fld)})
+    # Withdrawal is only reported from explicit source evidence already present in the integrity gate.
+    pw=previous.get("payload",{}).get("withdrawals",[]) or []; cw=current.get("payload",{}).get("withdrawals",[]) or []
+    if pw!=cw: changes.append({"type":"FIELD_CHANGED","field":"withdrawals","previous":pw,"current":cw,"explicit_source_evidence":True})
+    return {"state":"CHANGED" if changes else "UNCHANGED","changed":bool(changes),"changes":changes}
+
+def live_entry_snapshot(target_date):
+    base=live_entry_integrity(target_date); acquired=now(); races=[]; recovery=[]
+    for race in base.get("races",[]):
+        key="%s:%s"%(race.get("kaisai_date_id"),race.get("race_no"))
+        payload=_entry_snapshot_payload(race); h=_entry_snapshot_hash(payload)
+        sid="%s-%s-%s"%(race.get("kaisai_date_id"),race.get("race_no"),h[:16])
+        snap={"snapshot_id":sid,"acquired_at":acquired,"source_hash":h,"payload":payload}
+        hist=ENTRY_SNAPSHOT_HISTORY.setdefault(key,[]); prev=hist[-1] if hist else None
+        diff=compare_entry_snapshots(prev,snap)
+        # Append immutable content versions only; repeat acquisition remains an UNCHANGED observation.
+        if prev is None or prev.get("source_hash")!=h: hist.append(snap)
+        state="ERROR" if race.get("state")!="AVAILABLE" else ("CHANGED" if diff["changed"] else "AVAILABLE")
+        rec={"kaisai_date_id":race.get("kaisai_date_id"),"venue_code":race.get("venue_code"),"race_no":race.get("race_no"),
+          "state":state,"snapshot_id":sid,"acquired_at":acquired,"source_hash":h,"previous_snapshot_id":prev.get("snapshot_id") if prev else None,
+          "change_state":diff["state"],"changes":diff["changes"],"active_car_numbers":payload["active_car_numbers"],
+          "withdrawal_state":payload["withdrawal_state"],"withdrawals":payload["withdrawals"],"history_depth":len(hist)}
+        if state=="ERROR": recovery.append({"kaisai_date_id":race.get("kaisai_date_id"),"race_no":race.get("race_no"),"reason":"ENTRY_SNAPSHOT_SOURCE_NOT_AVAILABLE"})
+        races.append(rec)
+    bad=sum(r.get("state")=="ERROR" for r in races); changed=sum(r.get("state")=="CHANGED" for r in races)
+    state="ERROR" if races and bad==len(races) else ("PARTIAL" if bad else ("CHANGED" if changed else "AVAILABLE"))
+    return {"schema":"JFE-LIVE-ENTRY-SNAPSHOT/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,
+      "acquired_at":acquired,"race_count":len(races),"changed_race_count":changed,"error_race_count":bad,"races":races,
+      "recovery_queue":recovery,"snapshot_policy":"IMMUTABLE_CONTENT_VERSION","withdrawal_inference":False,
+      "fixed_rider_count_assumption":False,"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -1073,6 +1132,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  esnap=re.fullmatch(r"/v1/entry-snapshot/(\d{4}-\d{2}-\d{2})",p)
+  if esnap:
+   result=live_entry_snapshot(esnap.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   ei=re.fullmatch(r"/v1/entry-integrity/(\d{4}-\d{2}-\d{2})",p)
   if ei:
    result=live_entry_integrity(ei.group(1))

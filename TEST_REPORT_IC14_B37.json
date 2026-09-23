@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b37",
+  "new_tests": "7/7 PASS",
+  "compile": "PASS",
+  "status": "LIVE_DAILY_DISCOVERY_ENDPOINT_LOCAL_PASS",
+  "render_live_discovery": "NOT_YET_EXECUTED",
+  "next_gate": "Render /v1/discovery/<target_date> evidence"
+}

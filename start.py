@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-from urllib.parse import unquote
-VERSION="1.0.0-ic1.4-dev-b36"; START=time.time()
+from urllib.parse import unquote,parse_qs,urlparse
+VERSION="1.0.0-ic1.4-dev-b37"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -479,6 +479,34 @@ def trace_one(date,venue,rno):
          "odds_route":odds_route_trace(date,venue,rno,entry),
          "note":"Diagnostic evidence only. Secondary odds remains QUALIFYING until bet-type mapping/freshness is externally validated."}
 
+
+# ===== DEV-B37 Render Live Daily Discovery =====
+def live_daily_discovery(target_date):
+    """Use the proven Render HTTP path, then discover venue candidates without hardcoded venue counts."""
+    source_url="https://keirin.kdreams.jp/"
+    acquired_at=now(); t=time.time()
+    try:
+        q=urllib.request.Request(source_url,headers={"User-Agent":"JFE-Live-Discovery/0.1","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=20) as x:
+            body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
+        raw=body.decode("utf-8","replace")
+        # Reuse B4 discovery first; preserve UNKNOWN rather than guessing if page does not expose bound venue metadata.
+        parsed=discover_venues_from_html(raw,target_date)
+        venues=parsed.get("venues",[])
+        state="AVAILABLE" if venues else "UNKNOWN"
+        return {"schema":"JFE-LIVE-DAILY-DISCOVERY/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":state,"source_url":source_url,
+                "acquired_at":acquired_at,"transport":"RENDER_HTTP","http_status":status,
+                "content_type":ctype,"byte_length":len(body),"content_sha256":hashlib.sha256(body).hexdigest(),
+                "elapsed_ms":round((time.time()-t)*1000,1),"venues":venues,
+                "venue_count":len(venues),"parser_state":parsed.get("state"),
+                "parser_errors":parsed.get("errors",[]),"fabricated_data":False}
+    except Exception as e:
+        return {"schema":"JFE-LIVE-DAILY-DISCOVERY/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"ERROR","source_url":source_url,
+                "acquired_at":acquired_at,"transport":"RENDER_HTTP","error_type":type(e).__name__,
+                "error":str(e),"venues":[],"venue_count":0,"fabricated_data":False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -488,6 +516,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  dm=re.fullmatch(r"/v1/discovery/(\d{4}-\d{2}-\d{2})",p)
+  if dm:
+   result=live_daily_discovery(dm.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   if p=="/v1/acquisition/test":
    url=os.getenv("JFE_ACQUISITION_TEST_URL","https://keirin.kdreams.jp/")
    acquired_at=now(); t=time.time()

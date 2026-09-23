@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b41"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b42"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -484,6 +484,34 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B42 Race Identity Gate =====
+def race_identity_evidence(raw, meeting_id):
+    """Accept race numbers only when bound to a race-specific source link/reference."""
+    hrefs=re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']",raw,re.I)
+    evidence={}
+    for h in hrefs:
+        if "race" not in h.lower(): continue
+        # Strong form: meeting id followed by a two-digit race suffix.
+        for m in re.finditer(re.escape(meeting_id)+r"(\d{2})(?:[/?&#\"']|$)",h,re.I):
+            n=int(m.group(1))
+            if 1 <= n <= 99:
+                evidence.setdefault(n,[]).append(_abs_kd_url(h))
+        # Query/path race number is accepted only when the same href is meeting-bound.
+        if meeting_id in h:
+            for m in re.finditer(r"(?:race(?:no|num|number)?|r)[=/_-]?0?(\d{1,2})(?:\D|$)",h,re.I):
+                n=int(m.group(1))
+                if 1 <= n <= 99:
+                    evidence.setdefault(n,[]).append(_abs_kd_url(h))
+    # Deduplicate evidence URLs per race.
+    for n in list(evidence):
+        evidence[n]=list(dict.fromkeys(evidence[n]))
+    return evidence
+
+def enumerate_bound_races(raw,meeting_id):
+    ev=race_identity_evidence(raw,meeting_id)
+    return sorted(ev),ev
+
 # ===== DEV-B41 Race Verification / Dynamic Race Enumeration =====
 def _abs_kd_url(href):
     if href.startswith("https://") or href.startswith("http://"): return href
@@ -545,9 +573,9 @@ def live_race_verification(target_date):
                     with urllib.request.urlopen(q,timeout=20) as x:
                         body=x.read(); status=getattr(x,"status",None)
                     raw=body.decode("utf-8","replace")
-                    races=enumerate_races_from_racecard(raw,mid)
+                    races,race_ev=enumerate_bound_races(raw,mid)
                     ev={"url":url,"http_status":status,"byte_length":len(body),
-                        "content_sha256":hashlib.sha256(body).hexdigest(),"race_numbers":races}
+                        "content_sha256":hashlib.sha256(body).hexdigest(),"race_numbers":races,"race_identity_evidence":race_ev}
                     rec.setdefault("evidence",[]).append(ev)
                     if status==200 and races:
                         rec["state"]="VERIFIED_VENUE"; rec["races"]=races
@@ -721,6 +749,12 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  rg=re.fullmatch(r"/v1/race-identity-gate/(\d{4}-\d{2}-\d{2})",p)
+  if rg:
+   result=live_race_verification(rg.group(1))
+   result["schema"]="JFE-LIVE-RACE-IDENTITY-GATE/0.1"
+   result["identity_gate"]="B42_SOURCE_LINK_BOUND"
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   rv=re.fullmatch(r"/v1/race-verification/(\d{4}-\d{2}-\d{2})",p)
   if rv:
    result=live_race_verification(rv.group(1))

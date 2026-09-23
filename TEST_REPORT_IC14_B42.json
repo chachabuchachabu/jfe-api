@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b42",
+  "new_tests": "11/11 PASS",
+  "compile": "PASS",
+  "status": "RACE_IDENTITY_GATE_LOCAL_PASS",
+  "render_live_identity_gate": "NOT_YET_EXECUTED",
+  "regression_target": "B41 false-positive race 24 must disappear only if it lacks meeting-bound link evidence"
+}

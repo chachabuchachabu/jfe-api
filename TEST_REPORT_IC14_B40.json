@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0-ic1.4-dev-b40",
+  "new_tests": "9/9 PASS",
+  "compile": "PASS",
+  "status": "TARGET_DATE_MEETING_DISCOVERY_LOCAL_PASS",
+  "render_live_meeting_discovery": "NOT_YET_EXECUTED"
+}

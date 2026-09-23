@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b39"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b40"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -482,6 +482,49 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B40 Target-Date Meeting ID Discovery =====
+def discover_target_meeting_ids(raw,target_date):
+    compact=target_date.replace("-","")
+    hrefs=re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']",raw,re.I)
+    ids=[]
+    for h in hrefs:
+        for mid in re.findall(r"(?:kaisaiDateId=|/)(\d{14})(?:[/?&#\"']|$)",h,re.I):
+            if mid[2:10]==compact:
+                ids.append(mid)
+    for mid in re.findall(r"kaisaiDateId[^0-9]{0,20}(\d{14})",raw,re.I):
+        if mid[2:10]==compact:
+            ids.append(mid)
+    uniq=[]; seen=set()
+    for mid in ids:
+        if mid not in seen:
+            seen.add(mid); uniq.append(mid)
+    return {"target_date":target_date,"meeting_ids":uniq,"meeting_count":len(uniq),"href_count":len(hrefs)}
+
+def live_meeting_discovery(target_date):
+    source_url="https://keirin.kdreams.jp/"; acquired_at=now(); t=time.time()
+    try:
+        q=urllib.request.Request(source_url,headers={"User-Agent":"JFE-Meeting-Discovery/0.1",
+            "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=20) as x:
+            body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
+        raw=body.decode("utf-8","replace")
+        parsed=discover_target_meeting_ids(raw,target_date)
+        meetings=[{"kaisai_date_id":mid,"venue_code":mid[:2],"bound_date":mid[2:10],
+                   "meeting_suffix":mid[10:],"state":"DISCOVERED_CANDIDATE"} for mid in parsed["meeting_ids"]]
+        return {"schema":"JFE-LIVE-MEETING-DISCOVERY/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"AVAILABLE" if meetings else "UNKNOWN",
+                "source_url":source_url,"acquired_at":acquired_at,"transport":"RENDER_HTTP",
+                "http_status":status,"content_type":ctype,"byte_length":len(body),
+                "content_sha256":hashlib.sha256(body).hexdigest(),"elapsed_ms":round((time.time()-t)*1000,1),
+                "href_count":parsed["href_count"],"meeting_count":len(meetings),"meetings":meetings,
+                "verification_state":"CANDIDATE_ONLY","fabricated_data":False}
+    except Exception as e:
+        return {"schema":"JFE-LIVE-MEETING-DISCOVERY/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"ERROR","source_url":source_url,
+                "acquired_at":acquired_at,"transport":"RENDER_HTTP","error_type":type(e).__name__,
+                "error":str(e),"meetings":[],"meeting_count":0,"fabricated_data":False}
+
 # ===== DEV-B39 Live Response Body Diagnostics =====
 def live_body_diagnostics(target_date):
     source_url="https://keirin.kdreams.jp/"; acquired_at=now(); t=time.time()
@@ -590,6 +633,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  mm=re.fullmatch(r"/v1/meeting-discovery/(\d{4}-\d{2}-\d{2})",p)
+  if mm:
+   result=live_meeting_discovery(mm.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   bm=re.fullmatch(r"/v1/body-diagnostics/(\d{4}-\d{2}-\d{2})",p)
   if bm:
    result=live_body_diagnostics(bm.group(1))

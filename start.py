@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b38"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b39"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -481,6 +481,50 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B39 Live Response Body Diagnostics =====
+def live_body_diagnostics(target_date):
+    source_url="https://keirin.kdreams.jp/"; acquired_at=now(); t=time.time()
+    try:
+        q=urllib.request.Request(source_url,headers={
+            "User-Agent":"JFE-Body-Diagnostics/0.1",
+            "Accept":"text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=20) as x:
+            body=x.read(); status=getattr(x,"status",None)
+            headers={k.lower():v for k,v in x.headers.items()}
+        raw=body.decode("utf-8","replace"); low=raw.lower()
+        title_m=re.search(r"<title[^>]*>(.*?)</title>",raw,re.I|re.S)
+        title=re.sub(r"\s+"," ",title_m.group(1)).strip()[:300] if title_m else None
+        counts={"html_open":len(re.findall(r"<html\b",raw,re.I)),
+                "script_open":len(re.findall(r"<script\b",raw,re.I)),
+                "anchor_open":len(re.findall(r"<a\b",raw,re.I)),
+                "href_attr":len(re.findall(r"\bhref\s*=",raw,re.I)),
+                "form_open":len(re.findall(r"<form\b",raw,re.I)),
+                "iframe_open":len(re.findall(r"<iframe\b",raw,re.I))}
+        keywords={k:low.count(k.lower()) for k in
+                  ["racecard","odds","競輪","keirin","kdreams","cloudflare","javascript","__next_data__"]}
+        excerpt=re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+"," ",raw[:1800])
+        url_refs=re.findall(r"https?://[^\s\\\"'<>]+",raw,re.I)
+        api_like=[]; seen=set()
+        for u in url_refs:
+            if u not in seen and any(k in u.lower() for k in ("api","race","odds","keirin","kdreams")):
+                seen.add(u); api_like.append(u)
+        return {"schema":"JFE-LIVE-BODY-DIAGNOSTICS/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"AVAILABLE","source_url":source_url,
+                "acquired_at":acquired_at,"transport":"RENDER_HTTP","http_status":status,
+                "content_type":headers.get("content-type"),"content_encoding":headers.get("content-encoding"),
+                "content_length_header":headers.get("content-length"),"byte_length":len(body),
+                "content_sha256":hashlib.sha256(body).hexdigest(),"elapsed_ms":round((time.time()-t)*1000,1),
+                "title":title,"tag_counts":counts,"keyword_counts":keywords,"body_prefix":excerpt,
+                "api_like_url_count":len(api_like),"api_like_urls":api_like[:40],
+                "replacement_char_count":raw.count("\ufffd"),"fabricated_data":False,"diagnostic_only":True}
+    except Exception as e:
+        return {"schema":"JFE-LIVE-BODY-DIAGNOSTICS/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"ERROR","source_url":source_url,
+                "acquired_at":acquired_at,"transport":"RENDER_HTTP","error_type":type(e).__name__,
+                "error":str(e),"fabricated_data":False,"diagnostic_only":True}
+
 # ===== DEV-B38 Live Discovery Structure Probe =====
 def live_discovery_probe(target_date):
     source_url="https://keirin.kdreams.jp/"; acquired_at=now(); t=time.time()
@@ -546,6 +590,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  bm=re.fullmatch(r"/v1/body-diagnostics/(\d{4}-\d{2}-\d{2})",p)
+  if bm:
+   result=live_body_diagnostics(bm.group(1))
+   return self.j(200 if result["state"]=="AVAILABLE" else 503,result)
   pm=re.fullmatch(r"/v1/discovery-probe/(\d{4}-\d{2}-\d{2})",p)
   if pm:
    result=live_discovery_probe(pm.group(1))

@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0-ic1.4-dev-b38",
+  "new_tests": "7/7 PASS",
+  "compile": "PASS",
+  "status": "LIVE_DISCOVERY_STRUCTURE_PROBE_LOCAL_PASS",
+  "render_probe": "NOT_YET_EXECUTED"
+}

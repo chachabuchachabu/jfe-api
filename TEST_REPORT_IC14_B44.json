@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0-ic1.4-dev-b44",
+  "new_tests": "14/14 PASS",
+  "compile": "PASS",
+  "status": "ENTRY_FIRST_BINDING_LOCAL_PASS",
+  "render_live_entry_binding": "NOT_YET_EXECUTED"
+}

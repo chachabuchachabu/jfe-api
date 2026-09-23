@@ -1,7 +1,8 @@
+import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b43.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b44"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -488,6 +489,81 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B44 Entry-First Binding =====
+def _strip_tags(x):
+    x=re.sub(r"<br\s*/?>"," ",x,flags=re.I); x=re.sub(r"<[^>]+>"," ",x)
+    return re.sub(r"\s+"," ",html.unescape(x)).strip()
+
+def parse_primary_racecard_entries(raw):
+    m=re.search(r'<table\b[^>]*class=["\'][^"\']*\bracecard_table\b(?![^"\']*\bnone\b)[^"\']*["\'][^>]*>(.*?)</table>',raw,re.I|re.S)
+    if not m: return {"state":"UNKNOWN","entries":[],"errors":["PRIMARY_RACECARD_TABLE_NOT_FOUND"]}
+    entries=[]; errors=[]
+    for rm in re.finditer(r'<tr\b[^>]*class=["\'][^"\']*\bn(\d+)\b[^"\']*["\'][^>]*>(.*?)</tr>',m.group(1),re.I|re.S):
+        rc=int(rm.group(1)); row=rm.group(2)
+        nm=re.search(r'<td\b[^>]*class=["\'][^"\']*\bnum\b[^"\']*["\'][^>]*>\s*<span[^>]*>\s*(\d+)\s*</span>',row,re.I|re.S)
+        rider=re.search(r'<td\b[^>]*class=["\'][^"\']*\brider\b[^"\']*["\'][^>]*>(.*?)(?:<br\s*/?>)(.*?)</td>',row,re.I|re.S)
+        if not nm or not rider: errors.append("ROW_BINDING_INCOMPLETE:n%s"%rc); continue
+        car=int(nm.group(1)); name=_strip_tags(rider.group(1)); home=_strip_tags(rider.group(2))
+        hm=re.search(r'(.+?)/\s*(\d+)\s*/\s*(\d+)',home)
+        cells=[_strip_tags(x) for x in re.findall(r'<td\b[^>]*>(.*?)</td>',row,re.I|re.S)]
+        grade=cells[6] if len(cells)>6 and cells[6] else None
+        try: score=float(cells[9]) if len(cells)>9 else None
+        except: score=None
+        if car!=rc: errors.append("CAR_CLASS_MISMATCH:%s:%s"%(rc,car)); continue
+        if not name: errors.append("RIDER_NAME_EMPTY:%s"%car); continue
+        entries.append({"car_no":car,"rider_name":name,
+          "prefecture":hm.group(1).replace(" ","") if hm else None,
+          "age":int(hm.group(2)) if hm else None,"term":int(hm.group(3)) if hm else None,
+          "grade":grade,"race_score":score,
+          "binding_evidence":{"row_class":"n%s"%rc,"num_cell":str(car),"rider_cell":home}})
+    cars=[e["car_no"] for e in entries]
+    if len(cars)!=len(set(cars)): errors.append("DUPLICATE_CAR_NUMBER")
+    return {"state":"AVAILABLE" if entries and not errors else ("PARTIAL" if entries else "UNKNOWN"),
+      "entries":entries,"expected_car_numbers":sorted(set(cars)),"retrieved_car_numbers":sorted(set(cars)),
+      "missing_car_numbers":[],"unexpected_car_numbers":[],"errors":errors}
+
+def live_entry_binding(target_date):
+    base=live_race_verification(target_date); races=[]; recovery=[]
+    for venue in base.get("venues",[]):
+        if venue.get("state")!="VERIFIED_VENUE": continue
+        identity={}
+        for ev in venue.get("evidence",[]): identity.update(ev.get("race_identity_evidence") or {})
+        for race_no in venue.get("races",[]):
+            urls=identity.get(race_no) or identity.get(str(race_no)) or []
+            url=canonical_racedetail_url(urls)
+            rec={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":race_no,"race_url":url}
+            if not url:
+                rec.update({"state":"ERROR","error_type":"RACE_BINDING_ERROR"}); races.append(rec); continue
+            try:
+                q=urllib.request.Request(url,headers={"User-Agent":"JFE-Entry-Binding/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+                with urllib.request.urlopen(q,timeout=20) as x: body=x.read(); status=getattr(x,"status",None)
+                parsed=parse_primary_racecard_entries(body.decode("utf-8","replace")) if status==200 else {"state":"ERROR","entries":[],"errors":["HTTP_ERROR"]}
+                rec.update({"http_status":status,"byte_length":len(body),"content_sha256":hashlib.sha256(body).hexdigest(),"state":parsed["state"],"entry_binding":parsed})
+                if parsed["state"]!="AVAILABLE": recovery.append({"kaisai_date_id":venue.get("kaisai_date_id"),"race_no":race_no,"reason":"ENTRY_BINDING_INCOMPLETE","errors":parsed.get("errors",[])})
+            except Exception as e:
+                rec.update({"state":"ERROR","error_type":type(e).__name__,"error":str(e)})
+                recovery.append({"kaisai_date_id":venue.get("kaisai_date_id"),"race_no":race_no,"reason":"ENTRY_FETCH_ERROR"})
+            races.append(rec)
+    avail=sum(r.get("state")=="AVAILABLE" for r in races)
+    return {"schema":"JFE-LIVE-ENTRY-BINDING/0.1","service":"JFE","version":VERSION,"target_date":target_date,
+      "state":"AVAILABLE" if races and avail==len(races) else "PARTIAL","acquired_at":now(),"race_count":len(races),
+      "available_race_count":avail,"races":races,"recovery_queue":recovery,
+      "binding_contract":"PRIMARY_RACECARD_ROW_CLASS_NUM_RIDER","fabricated_data":False}
+
+def compact_entry_binding(target_date):
+    x=live_entry_binding(target_date); rows=[]
+    for r in x.get("races",[]):
+        b=r.get("entry_binding") or {}
+        rows.append({"venue_code":r.get("venue_code"),"race_no":r.get("race_no"),"state":r.get("state"),
+          "http_status":r.get("http_status"),"entry_count":len(b.get("entries",[])),"cars":b.get("retrieved_car_numbers",[]),
+          "riders":[{"car_no":e.get("car_no"),"name":e.get("rider_name"),"prefecture":e.get("prefecture"),
+                     "age":e.get("age"),"term":e.get("term"),"grade":e.get("grade"),"race_score":e.get("race_score")}
+                    for e in b.get("entries",[])],"errors":b.get("errors",[])})
+    return {"schema":"JFE-COMPACT-ENTRY-BINDING/0.1","service":"JFE","version":VERSION,"target_date":target_date,
+      "state":x.get("state"),"race_count":x.get("race_count"),"available_race_count":x.get("available_race_count"),
+      "races":rows,"recovery_count":len(x.get("recovery_queue",[])),"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -935,6 +1011,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  eb=re.fullmatch(r"/v1/entry-binding/(\d{4}-\d{2}-\d{2})",p)
+  if eb:
+   result=compact_entry_binding(eb.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   dp=re.fullmatch(r"/v1/dom-probe/(\d{4}-\d{2}-\d{2})",p)
   if dp:
    result=live_dom_probe(dp.group(1))
@@ -1529,7 +1609,8 @@ def resolve_kdreams_event_from_links(html,target_date,venue_code,base_url="https
     return {"state":"AVAILABLE","event_base":token,"source_url":url,"error":None}
 
 # ===== IC1.4 Immutable Pre-Race Lock + Result/Learning (DEV-B11) =====
-import hashlib as _hashlib, json as _json, copy as _copy
+import hashlib
+import html as _hashlib, json as _json, copy as _copy
 from datetime import datetime as _dt, timezone as _tz
 def _canonical_hash(obj):
     raw=_json.dumps(obj,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str)

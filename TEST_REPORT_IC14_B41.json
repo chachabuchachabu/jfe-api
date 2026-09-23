@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b41",
+  "new_tests": "10/10 PASS",
+  "compile": "PASS",
+  "status": "RACE_VERIFICATION_LOCAL_PASS",
+  "render_live_race_verification": "NOT_YET_EXECUTED",
+  "b40_live_input": "2 target-date meeting candidates observed"
+}

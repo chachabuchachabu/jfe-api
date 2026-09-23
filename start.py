@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b40"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b41"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -483,6 +483,94 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B41 Race Verification / Dynamic Race Enumeration =====
+def _abs_kd_url(href):
+    if href.startswith("https://") or href.startswith("http://"): return href
+    if href.startswith("//"): return "https:"+href
+    if href.startswith("/"): return "https://keirin.kdreams.jp"+href
+    return "https://keirin.kdreams.jp/"+href
+
+def discover_meeting_racecard_urls(raw,target_date):
+    """Bind target-date meeting IDs to source-published KDreams racecard URLs."""
+    compact=target_date.replace("-","")
+    hrefs=re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']",raw,re.I)
+    found={}
+    for h in hrefs:
+        if "racecard" not in h.lower(): continue
+        mids=re.findall(r"(\d{14})",h)
+        for mid in mids:
+            if mid[2:10] != compact: continue
+            found.setdefault(mid,[])
+            u=_abs_kd_url(h)
+            if u not in found[mid]: found[mid].append(u)
+    return found
+
+def enumerate_races_from_racecard(raw,meeting_id):
+    """Enumerate race numbers from page evidence; never assumes 12 races."""
+    nums=set()
+    # Race-specific 14/16-digit identifiers and explicit race labels/links.
+    for tok in re.findall(r"\d{14,16}",raw):
+        if tok.startswith(meeting_id):
+            tail=tok[len(meeting_id):]
+            if tail.isdigit() and tail:
+                n=int(tail[-2:])
+                if 1 <= n <= 99: nums.add(n)
+    for m in re.findall(r"(?:race|r)[/_=-]?0?(\d{1,2})(?:\D|$)",raw,re.I):
+        n=int(m)
+        if 1 <= n <= 99: nums.add(n)
+    for m in re.findall(r"(\d{1,2})\s*R\b",raw,re.I):
+        n=int(m)
+        if 1 <= n <= 99: nums.add(n)
+    return sorted(nums)
+
+def live_race_verification(target_date):
+    root="https://keirin.kdreams.jp/"; acquired_at=now()
+    try:
+        rq=urllib.request.Request(root,headers={"User-Agent":"JFE-Race-Verification/0.1",
+            "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(rq,timeout=20) as x:
+            root_body=x.read()
+        root_raw=root_body.decode("utf-8","replace")
+        candidates=discover_meeting_racecard_urls(root_raw,target_date)
+        venues=[]; recovery=[]
+        for mid,urls in candidates.items():
+            rec={"kaisai_date_id":mid,"venue_code":mid[:2],"bound_date":mid[2:10],
+                 "source_racecard_urls":urls,"state":"DISCOVERED_CANDIDATE","races":[]}
+            verified=False
+            for url in urls:
+                try:
+                    q=urllib.request.Request(url,headers={"User-Agent":"JFE-Race-Verification/0.1",
+                        "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+                    with urllib.request.urlopen(q,timeout=20) as x:
+                        body=x.read(); status=getattr(x,"status",None)
+                    raw=body.decode("utf-8","replace")
+                    races=enumerate_races_from_racecard(raw,mid)
+                    ev={"url":url,"http_status":status,"byte_length":len(body),
+                        "content_sha256":hashlib.sha256(body).hexdigest(),"race_numbers":races}
+                    rec.setdefault("evidence",[]).append(ev)
+                    if status==200 and races:
+                        rec["state"]="VERIFIED_VENUE"; rec["races"]=races
+                        rec["race_count"]=len(races); verified=True; break
+                except Exception as e:
+                    rec.setdefault("errors",[]).append({"url":url,"error_type":type(e).__name__,"error":str(e)})
+            if not verified:
+                rec["race_count"]=0
+                recovery.append({"kaisai_date_id":mid,"reason":"RACE_VERIFICATION_INCOMPLETE"})
+            venues.append(rec)
+        verified_count=sum(1 for v in venues if v["state"]=="VERIFIED_VENUE")
+        return {"schema":"JFE-LIVE-RACE-VERIFICATION/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"AVAILABLE" if verified_count else "UNKNOWN",
+                "source_url":root,"acquired_at":acquired_at,"transport":"RENDER_HTTP",
+                "root_byte_length":len(root_body),"root_content_sha256":hashlib.sha256(root_body).hexdigest(),
+                "candidate_count":len(venues),"verified_venue_count":verified_count,
+                "venues":venues,"recovery_queue":recovery,"fabricated_data":False}
+    except Exception as e:
+        return {"schema":"JFE-LIVE-RACE-VERIFICATION/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"ERROR","source_url":root,"acquired_at":acquired_at,
+                "transport":"RENDER_HTTP","error_type":type(e).__name__,"error":str(e),
+                "venues":[],"recovery_queue":[],"fabricated_data":False}
+
 # ===== DEV-B40 Target-Date Meeting ID Discovery =====
 def discover_target_meeting_ids(raw,target_date):
     compact=target_date.replace("-","")
@@ -633,6 +721,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  rv=re.fullmatch(r"/v1/race-verification/(\d{4}-\d{2}-\d{2})",p)
+  if rv:
+   result=live_race_verification(rv.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   mm=re.fullmatch(r"/v1/meeting-discovery/(\d{4}-\d{2}-\d{2})",p)
   if mm:
    result=live_meeting_discovery(mm.group(1))

@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b44"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b44.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -506,10 +506,18 @@ def parse_primary_racecard_entries(raw):
         if not nm or not rider: errors.append("ROW_BINDING_INCOMPLETE:n%s"%rc); continue
         car=int(nm.group(1)); name=_strip_tags(rider.group(1)); home=_strip_tags(rider.group(2))
         hm=re.search(r'(.+?)/\s*(\d+)\s*/\s*(\d+)',home)
-        cells=[_strip_tags(x) for x in re.findall(r'<td\b[^>]*>(.*?)</td>',row,re.I|re.S)]
-        grade=cells[6] if len(cells)>6 and cells[6] else None
-        try: score=float(cells[9]) if len(cells)>9 else None
-        except: score=None
+        td_matches=list(re.finditer(r'<td\b([^>]*)>(.*?)</td>',row,re.I|re.S))
+        rider_idx=None; cells=[]
+        for i,tm in enumerate(td_matches):
+            attrs=tm.group(1); cells.append(_strip_tags(tm.group(2)))
+            cm=re.search(r'class=["\']([^"\']*)["\']',attrs,re.I)
+            if cm and "rider" in cm.group(1).split(): rider_idx=i
+        grade=None; score=None
+        if rider_idx is not None:
+            if rider_idx+1 < len(cells): grade=cells[rider_idx+1] or None
+            if rider_idx+4 < len(cells):
+                try: score=float(cells[rider_idx+4])
+                except: score=None
         if car!=rc: errors.append("CAR_CLASS_MISMATCH:%s:%s"%(rc,car)); continue
         if not name: errors.append("RIDER_NAME_EMPTY:%s"%car); continue
         entries.append({"car_no":car,"rider_name":name,

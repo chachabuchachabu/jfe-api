@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b43"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b43.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -486,6 +486,38 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B43.1 Compact Entry Diagnostic =====
+def compact_entry_diagnostic(target_date):
+    """Run B43, but return only the evidence needed to design the binding parser."""
+    full=live_entry_acquisition(target_date)
+    rows=[]
+    totals={"races":0,"http_200":0,"racer_links":0,"car_token_races":0,"errors":0}
+    for r in full.get("races",[]):
+        pr=r.get("entry_probe") or {}
+        row={"kaisai_date_id":r.get("kaisai_date_id"),"venue_code":r.get("venue_code"),
+             "race_no":r.get("race_no"),"state":r.get("state"),
+             "entry_binding_state":r.get("entry_binding_state"),
+             "http_status":r.get("http_status"),
+             "racer_link_count":pr.get("racer_link_count",0),
+             "car_tokens":pr.get("car_tokens",[])}
+        links=pr.get("racer_links") or []
+        if links: row["sample_racer_links"]=links[:3]
+        ctx=pr.get("contexts") or []
+        if ctx: row["sample_context"]=ctx[0][:350]
+        if r.get("error_type"): row["error_type"]=r.get("error_type")
+        rows.append(row)
+        totals["races"]+=1
+        totals["http_200"]+=1 if r.get("http_status")==200 else 0
+        totals["racer_links"]+=pr.get("racer_link_count",0) or 0
+        totals["car_token_races"]+=1 if pr.get("car_tokens") else 0
+        totals["errors"]+=1 if r.get("state")=="ERROR" else 0
+    return {"schema":"JFE-COMPACT-ENTRY-DIAGNOSTIC/0.1","service":"JFE","version":VERSION,
+            "target_date":target_date,"state":full.get("state"),"acquired_at":full.get("acquired_at"),
+            "verified_venue_count":full.get("verified_venue_count",0),"totals":totals,
+            "races":rows,"recovery_count":len(full.get("recovery_queue",[])),
+            "fabricated_data":False}
+
 # ===== DEV-B43 Entry Acquisition Probe =====
 def canonical_racedetail_url(identity_urls):
     for u in identity_urls or []:
@@ -827,6 +859,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  es=re.fullmatch(r"/v1/entry-summary/(\d{4}-\d{2}-\d{2})",p)
+  if es:
+   result=compact_entry_diagnostic(es.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   ea=re.fullmatch(r"/v1/entry-acquisition/(\d{4}-\d{2}-\d{2})",p)
   if ea:
    result=live_entry_acquisition(ea.group(1))

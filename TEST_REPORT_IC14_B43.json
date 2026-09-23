@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b43",
+  "new_tests": "12/12 PASS",
+  "compile": "PASS",
+  "status": "ENTRY_ACQUISITION_PROBE_LOCAL_PASS",
+  "render_live_entry_acquisition": "NOT_YET_EXECUTED",
+  "next_gate": "car-number -> rider identity binding from live evidence"
+}

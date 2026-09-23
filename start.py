@@ -1,7 +1,7 @@
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b42"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b43"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -485,6 +485,84 @@ def trace_one(date,venue,rno):
 
 
 
+
+# ===== DEV-B43 Entry Acquisition Probe =====
+def canonical_racedetail_url(identity_urls):
+    for u in identity_urls or []:
+        if re.search(r"/racedetail/\d{16}/?$",u):
+            return u
+    for u in identity_urls or []:
+        if "/racedetail/" in u and "pageType=" not in u:
+            return u.split("?")[0]
+    return None
+
+def entry_structure_probe(raw):
+    hrefs=re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']",raw,re.I)
+    racer_links=[]
+    for h in hrefs:
+        hl=h.lower()
+        if any(k in hl for k in ("racer_detail","racer-detail","racer/detail","senshu","player")):
+            u=_abs_kd_url(h)
+            if u not in racer_links: racer_links.append(u)
+    contexts=[]
+    for m in re.finditer(r"(?:Racer_Detail|racer|senshu|選手)",raw,re.I):
+        a=max(0,m.start()-180); b=min(len(raw),m.end()+260)
+        x=re.sub(r"\s+"," ",raw[a:b]).strip()
+        if x and x not in contexts: contexts.append(x[:500])
+        if len(contexts)>=20: break
+    car_tokens=sorted({int(x) for x in re.findall(r"(?:車番|carNo|car_no)[^0-9]{0,20}([1-9]\d?)",raw,re.I)})
+    return {"href_count":len(hrefs),"racer_link_count":len(racer_links),
+            "racer_links":racer_links[:40],"car_tokens":car_tokens,"contexts":contexts}
+
+def live_entry_acquisition(target_date):
+    base=live_race_verification(target_date)
+    if base.get("state")=="ERROR":
+        return {"schema":"JFE-LIVE-ENTRY-ACQUISITION/0.1","service":"JFE","version":VERSION,
+                "target_date":target_date,"state":"ERROR","upstream":base,"races":[],
+                "recovery_queue":[],"fabricated_data":False}
+    races=[]; recovery=[]
+    for venue in base.get("venues",[]):
+        if venue.get("state")!="VERIFIED_VENUE": continue
+        identity={}
+        for ev in venue.get("evidence",[]):
+            identity.update(ev.get("race_identity_evidence") or {})
+        for race_no in venue.get("races",[]):
+            urls=identity.get(race_no) or identity.get(str(race_no)) or []
+            url=canonical_racedetail_url(urls)
+            rec={"kaisai_date_id":venue["kaisai_date_id"],"venue_code":venue["venue_code"],
+                 "race_no":race_no,"race_url":url,"state":"UNKNOWN"}
+            if not url:
+                rec["state"]="ERROR"; rec["error_type"]="RACE_BINDING_ERROR"
+                recovery.append({"kaisai_date_id":venue["kaisai_date_id"],"race_no":race_no,
+                                 "reason":"CANONICAL_RACE_URL_MISSING"})
+                races.append(rec); continue
+            try:
+                q=urllib.request.Request(url,headers={"User-Agent":"JFE-Entry-Acquisition/0.1",
+                    "Accept-Encoding":"identity","Cache-Control":"no-cache"})
+                with urllib.request.urlopen(q,timeout=20) as x:
+                    body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
+                raw=body.decode("utf-8","replace")
+                probe=entry_structure_probe(raw)
+                rec.update({"http_status":status,"content_type":ctype,"byte_length":len(body),
+                            "content_sha256":hashlib.sha256(body).hexdigest(),"entry_probe":probe,
+                            "state":"PARTIAL" if status==200 else "ERROR",
+                            "entry_binding_state":"PROBE_ONLY"})
+                if status!=200:
+                    recovery.append({"kaisai_date_id":venue["kaisai_date_id"],"race_no":race_no,
+                                     "reason":"HTTP_ERROR"})
+            except Exception as e:
+                rec.update({"state":"ERROR","entry_binding_state":"ERROR",
+                            "error_type":type(e).__name__,"error":str(e)})
+                recovery.append({"kaisai_date_id":venue["kaisai_date_id"],"race_no":race_no,
+                                 "reason":"ENTRY_FETCH_ERROR"})
+            races.append(rec)
+    ok=sum(1 for r in races if r.get("http_status")==200)
+    return {"schema":"JFE-LIVE-ENTRY-ACQUISITION/0.1","service":"JFE","version":VERSION,
+            "target_date":target_date,"state":"PARTIAL" if races else "UNKNOWN","acquired_at":now(),
+            "transport":"RENDER_HTTP","verified_venue_count":base.get("verified_venue_count",0),
+            "race_count":len(races),"http_200_race_count":ok,"races":races,
+            "recovery_queue":recovery,"entry_gate":"ENTRY_FIRST_PROBE_ONLY","fabricated_data":False}
+
 # ===== DEV-B42 Race Identity Gate =====
 def race_identity_evidence(raw, meeting_id):
     """Accept race numbers only when bound to a race-specific source link/reference."""
@@ -749,6 +827,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  ea=re.fullmatch(r"/v1/entry-acquisition/(\d{4}-\d{2}-\d{2})",p)
+  if ea:
+   result=live_entry_acquisition(ea.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   rg=re.fullmatch(r"/v1/race-identity-gate/(\d{4}-\d{2}-\d{2})",p)
   if rg:
    result=live_race_verification(rg.group(1))

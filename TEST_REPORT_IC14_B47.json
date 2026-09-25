@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0-ic1.4-dev-b47",
+  "b47_tests": {"total": 8, "passed": 8, "failed": 0},
+  "py_compile": "PASS",
+  "legacy_regression": {"total": 57, "passed": 54, "failed": 3, "failure_class": "EXPECTED_VERSION_ASSERTION_ONLY", "functional_failures": 0},
+  "status": "PRE_RACE_ENTRY_LOCK_LOCAL_PASS",
+  "storage_mode": "PROCESS_MEMORY_VOLATILE",
+  "durable_across_restart": false
+}

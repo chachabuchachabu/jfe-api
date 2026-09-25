@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b46"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b47"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -685,6 +685,53 @@ def live_entry_snapshot(target_date):
       "recovery_queue":recovery,"snapshot_policy":"IMMUTABLE_CONTENT_VERSION","withdrawal_inference":False,
       "fixed_rider_count_assumption":False,"fabricated_data":False}
 
+# ===== DEV-B47 Pre-Race Entry Snapshot LOCK =====
+PRE_RACE_LOCKS={}
+
+def _lock_key(r):
+    return "%s:%s"%(r.get("kaisai_date_id"),r.get("race_no"))
+
+def _new_entry_lock(r, locked_at, relock_of=None):
+    material={"kaisai_date_id":r.get("kaisai_date_id"),"venue_code":r.get("venue_code"),"race_no":r.get("race_no"),
+      "entry_snapshot_id":r.get("snapshot_id"),"entry_source_hash":r.get("source_hash"),
+      "active_car_numbers":list(r.get("active_car_numbers") or []),"withdrawal_state":r.get("withdrawal_state","UNKNOWN")}
+    lock_hash=hashlib.sha256(json.dumps(material,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+    return {"lock_id":"%s-%s-lock-%s"%(r.get("kaisai_date_id"),r.get("race_no"),lock_hash[:16]),
+      "locked_at":locked_at,"lock_state":"LOCKED","lock_scope":"ENTRY_ONLY","entry_snapshot_id":r.get("snapshot_id"),
+      "entry_source_hash":r.get("source_hash"),"active_car_numbers":material["active_car_numbers"],
+      "withdrawal_state":material["withdrawal_state"],"odds_locked":False,"scheduled_start_cutoff_enforced":False,
+      "relock_of":relock_of,"invalidated_at":None,"invalidation_reason":None}
+
+def live_pre_race_lock(target_date, force_relock=False):
+    current=live_entry_snapshot(target_date); at=now(); out=[]; recovery=[]
+    for r in current.get("races",[]):
+        key=_lock_key(r); existing=PRE_RACE_LOCKS.get(key)
+        if r.get("state")=="ERROR":
+            out.append({"kaisai_date_id":r.get("kaisai_date_id"),"venue_code":r.get("venue_code"),"race_no":r.get("race_no"),
+              "state":"ERROR","lock_state":"NOT_LOCKED","entry_snapshot_id":r.get("snapshot_id"),"errors":["ENTRY_SNAPSHOT_NOT_AVAILABLE"]})
+            recovery.append({"kaisai_date_id":r.get("kaisai_date_id"),"race_no":r.get("race_no"),"reason":"ENTRY_SNAPSHOT_NOT_AVAILABLE"}); continue
+        if existing is None:
+            existing=_new_entry_lock(r,at); PRE_RACE_LOCKS[key]=existing
+        elif existing.get("entry_snapshot_id")!=r.get("snapshot_id"):
+            if force_relock:
+                old_id=existing.get("lock_id"); existing=_new_entry_lock(r,at,relock_of=old_id); PRE_RACE_LOCKS[key]=existing
+            else:
+                existing=dict(existing); existing["lock_state"]="RELOCK_REQUIRED"; existing["invalidated_at"]=at
+                existing["invalidation_reason"]="ENTRY_SNAPSHOT_CHANGED"; PRE_RACE_LOCKS[key]=existing
+        elif existing.get("lock_state")=="RELOCK_REQUIRED" and force_relock:
+            old_id=existing.get("lock_id"); existing=_new_entry_lock(r,at,relock_of=old_id); PRE_RACE_LOCKS[key]=existing
+        rec={"kaisai_date_id":r.get("kaisai_date_id"),"venue_code":r.get("venue_code"),"race_no":r.get("race_no"),
+          "state":"AVAILABLE" if existing.get("lock_state")=="LOCKED" else "CHANGED",**existing,
+          "current_entry_snapshot_id":r.get("snapshot_id"),"current_entry_source_hash":r.get("source_hash")}
+        out.append(rec)
+    invalid=sum(x.get("lock_state")=="RELOCK_REQUIRED" for x in out); err=sum(x.get("state")=="ERROR" for x in out)
+    state="ERROR" if out and err==len(out) else ("PARTIAL" if err else ("CHANGED" if invalid else "AVAILABLE"))
+    return {"schema":"JFE-PRE-RACE-ENTRY-LOCK/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,
+      "acquired_at":at,"race_count":len(out),"locked_race_count":sum(x.get("lock_state")=="LOCKED" for x in out),
+      "relock_required_count":invalid,"error_race_count":err,"races":out,"recovery_queue":recovery,
+      "lock_scope":"ENTRY_ONLY","silent_overwrite":False,"odds_locked":False,"scheduled_start_cutoff_enforced":False,
+      "storage_mode":"PROCESS_MEMORY_VOLATILE","durable_across_restart":False,"fixed_rider_count_assumption":False,"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -1132,6 +1179,14 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  prl=re.fullmatch(r"/v1/pre-race-lock/(\d{4}-\d{2}-\d{2})",p)
+  if prl:
+   result=live_pre_race_lock(prl.group(1),False)
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
+  prr=re.fullmatch(r"/v1/pre-race-relock/(\d{4}-\d{2}-\d{2})",p)
+  if prr:
+   result=live_pre_race_lock(prr.group(1),True)
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   esnap=re.fullmatch(r"/v1/entry-snapshot/(\d{4}-\d{2}-\d{2})",p)
   if esnap:
    result=live_entry_snapshot(esnap.group(1))

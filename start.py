@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b47"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b48"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -732,6 +732,74 @@ def live_pre_race_lock(target_date, force_relock=False):
       "lock_scope":"ENTRY_ONLY","silent_overwrite":False,"odds_locked":False,"scheduled_start_cutoff_enforced":False,
       "storage_mode":"PROCESS_MEMORY_VOLATILE","durable_across_restart":False,"fixed_rider_count_assumption":False,"fabricated_data":False}
 
+# ===== DEV-B48 Market/Odds DOM Probe =====
+def _odds_url_from_racedetail(url):
+    """Use the already source-bound racedetail URL; only switch the official pageType view."""
+    if not isinstance(url,str) or "/racedetail/" not in url: return None
+    base=url.split("?",1)[0]
+    return base+"?pageType=odds"
+
+def odds_dom_probe(raw, active_car_numbers):
+    """Diagnostic-only market probe. It never promotes numeric values without explicit bet-type context."""
+    text=txt(raw); active=set(int(x) for x in (active_car_numbers or []) if isinstance(x,int) or str(x).isdigit())
+    labels=[]
+    for label,(key,legs) in BET_TYPES.items():
+        if re.search(re.escape(label),text):
+            item={"label":label,"bet_type":key,"legs":legs}
+            if item not in labels: labels.append(item)
+    classes=[]
+    for m in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']',raw,re.I):
+        for c in m.group(1).split():
+            if c not in classes and any(k in c.lower() for k in ("odd","rate","bet","waku","wheel","race")): classes.append(c)
+    tables=[]
+    for m in re.finditer(r"<table\b[^>]*>",raw,re.I):
+        a=m.start(); end=raw.find("</table>",a); frag=raw[a:(end+8 if end!=-1 else min(len(raw),a+2500))]
+        ft=txt(frag)
+        if any(x["label"] in ft for x in labels) or re.search(r"\b\d{1,5}\.\d\b",ft):
+            tables.append(_compact_html(frag,900))
+        if len(tables)>=8: break
+    stamps=re.findall(r"(20\d{2}[/-]\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2})現在",text)
+    sections=parse_kd_odds_sections(raw,sorted(active)) if active else {k:{"state":"UNKNOWN","bet_type_bound":False,"data":[],"rejected":[]} for k in ("wide","quinella","exacta","trio","trifecta")}
+    summary={}
+    for k,v in sections.items():
+        summary[k]={"state":v.get("state"),"bet_type_bound":bool(v.get("bet_type_bound")),"verified_odds_count":len(v.get("data",[])),"rejected_count":len(v.get("rejected",[])),"label_evidence":v.get("label_evidence")}
+    return {"explicit_bet_type_labels":labels,"market_classes":classes[:80],"table_count":len(re.findall(r"<table\b",raw,re.I)),
+      "candidate_table_samples":tables,"source_timestamp":stamps[-1] if stamps else None,"bet_type_summary":summary,
+      "verified_odds_count":sum(x["verified_odds_count"] for x in summary.values()),"active_car_numbers":sorted(active)}
+
+def live_odds_dom_probe(target_date):
+    """One source-bound race per verified venue. Diagnostic only; no market READY promotion."""
+    locks=live_pre_race_lock(target_date,False); out=[]; recovery=[]; seen=set()
+    for r in locks.get("races",[]):
+        vc=str(r.get("venue_code"))
+        if vc in seen or r.get("lock_state")!="LOCKED": continue
+        seen.add(vc)
+        kid=r.get("kaisai_date_id"); rn=r.get("race_no")
+        # Recover source-published race URL from B42 evidence rather than constructing a meeting/race path.
+        base=live_race_verification(target_date); source_url=None
+        for v in base.get("venues",[]):
+            if str(v.get("venue_code"))!=vc: continue
+            identity={}
+            for ev in v.get("evidence",[]): identity.update(ev.get("race_identity_evidence") or {})
+            urls=identity.get(rn) or identity.get(str(rn)) or []
+            source_url=canonical_racedetail_url(urls); break
+        odds_url=_odds_url_from_racedetail(source_url)
+        rec={"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"state":"UNKNOWN","entry_lock_id":r.get("lock_id"),"source_racedetail_url":source_url,"odds_url":odds_url}
+        if not odds_url:
+            rec.update({"state":"ERROR","error_type":"RACE_BINDING_ERROR"}); recovery.append({"kaisai_date_id":kid,"race_no":rn,"reason":"ODDS_URL_NOT_SOURCE_BOUND"}); out.append(rec); continue
+        try:
+            q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-Odds-DOM-Probe/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+            with urllib.request.urlopen(q,timeout=20) as x: body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
+            raw=body.decode("utf-8","replace"); diag=odds_dom_probe(raw,r.get("active_car_numbers") or [])
+            rec.update({"state":"AVAILABLE" if status==200 else "ERROR","http_status":status,"content_type":ctype,"byte_length":len(body),"content_sha256":hashlib.sha256(body).hexdigest(),"diagnostic":diag})
+        except Exception as e:
+            rec.update({"state":"ERROR","error_type":type(e).__name__,"error":str(e)}); recovery.append({"kaisai_date_id":kid,"race_no":rn,"reason":"ODDS_FETCH_ERROR","error_type":type(e).__name__})
+        out.append(rec)
+    ok=sum(x.get("state")=="AVAILABLE" for x in out)
+    return {"schema":"JFE-LIVE-ODDS-DOM-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,
+      "state":"AVAILABLE" if out and ok==len(out) else ("PARTIAL" if ok else "ERROR"),"acquired_at":now(),"sample_count":len(out),"samples":out,"recovery_queue":recovery,
+      "sample_policy":"FIRST_LOCKED_SOURCE_BOUND_RACE_PER_VENUE","parser_promotion":"NONE_DIAGNOSTIC_ONLY","bet_type_inference":False,"invalid_combination_guard":True,"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -1179,6 +1247,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  odp=re.fullmatch(r"/v1/odds-dom-probe/(\d{4}-\d{2}-\d{2})",p)
+  if odp:
+   result=live_odds_dom_probe(odp.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   prl=re.fullmatch(r"/v1/pre-race-lock/(\d{4}-\d{2}-\d{2})",p)
   if prl:
    result=live_pre_race_lock(prl.group(1),False)

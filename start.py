@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b48"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b48.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -768,37 +768,65 @@ def odds_dom_probe(raw, active_car_numbers):
       "verified_odds_count":sum(x["verified_odds_count"] for x in summary.values()),"active_car_numbers":sorted(active)}
 
 def live_odds_dom_probe(target_date):
-    """One source-bound race per verified venue. Diagnostic only; no market READY promotion."""
-    locks=live_pre_race_lock(target_date,False); out=[]; recovery=[]; seen=set()
-    for r in locks.get("races",[]):
-        vc=str(r.get("venue_code"))
-        if vc in seen or r.get("lock_state")!="LOCKED": continue
-        seen.add(vc)
-        kid=r.get("kaisai_date_id"); rn=r.get("race_no")
-        # Recover source-published race URL from B42 evidence rather than constructing a meeting/race path.
-        base=live_race_verification(target_date); source_url=None
-        for v in base.get("venues",[]):
-            if str(v.get("venue_code"))!=vc: continue
-            identity={}
-            for ev in v.get("evidence",[]): identity.update(ev.get("race_identity_evidence") or {})
-            urls=identity.get(rn) or identity.get(str(rn)) or []
-            source_url=canonical_racedetail_url(urls); break
+    """B48.1: diagnose and recover LOCK -> source race binding before any odds parse."""
+    locks=live_pre_race_lock(target_date,False); out=[]; recovery=[]
+    locked=[r for r in locks.get("races",[]) if r.get("lock_state")=="LOCKED"]
+    # Reuse the source-bound acquisition layer directly. Do not reconstruct URLs from a second B42 evidence walk.
+    binding=live_entry_binding(target_date)
+    bound=[r for r in binding.get("races",[]) if r.get("race_url")]
+    by_exact={(str(r.get("kaisai_date_id")),str(r.get("venue_code")),int(r.get("race_no"))):r for r in bound if r.get("race_no") is not None}
+    by_vr={}
+    for r in bound:
+        if r.get("race_no") is not None:
+            by_vr.setdefault((str(r.get("venue_code")),int(r.get("race_no"))),[]).append(r)
+    stages={"lock_race_count":len(locks.get("races",[])),"locked_candidates":len(locked),
+      "source_bound_candidates":len(bound),"identity_matches":0,"source_url_matches":0,"fetch_attempts":0,"fetch_successes":0}
+    seen=set()
+    for r in locked:
+        vc=str(r.get("venue_code")); kid=str(r.get("kaisai_date_id")); rn=int(r.get("race_no"))
+        if vc in seen: continue
+        match=by_exact.get((kid,vc,rn)); match_mode="EXACT_KAISAIDATE_VENUE_RACE"
+        if match is None:
+            candidates=by_vr.get((vc,rn),[])
+            if len(candidates)==1:
+                match=candidates[0]; match_mode="VENUE_RACE_UNIQUE_FALLBACK"
+            elif len(candidates)>1:
+                recovery.append({"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"reason":"AMBIGUOUS_SOURCE_BINDING","candidate_count":len(candidates)})
+                continue
+        if match is None:
+            recovery.append({"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"reason":"SOURCE_IDENTITY_NOT_FOUND"})
+            continue
+        stages["identity_matches"]+=1
+        source_url=match.get("race_url")
         odds_url=_odds_url_from_racedetail(source_url)
-        rec={"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"state":"UNKNOWN","entry_lock_id":r.get("lock_id"),"source_racedetail_url":source_url,"odds_url":odds_url}
         if not odds_url:
-            rec.update({"state":"ERROR","error_type":"RACE_BINDING_ERROR"}); recovery.append({"kaisai_date_id":kid,"race_no":rn,"reason":"ODDS_URL_NOT_SOURCE_BOUND"}); out.append(rec); continue
+            recovery.append({"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"reason":"ODDS_URL_NOT_SOURCE_BOUND","source_racedetail_url":source_url})
+            continue
+        stages["source_url_matches"]+=1
+        # A venue is sampled only after a source URL is actually bound; failed candidates are not silently consumed.
+        seen.add(vc)
+        rec={"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"state":"UNKNOWN","entry_lock_id":r.get("lock_id"),
+          "source_racedetail_url":source_url,"source_binding_mode":match_mode,"odds_url":odds_url}
+        stages["fetch_attempts"]+=1
         try:
             q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-Odds-DOM-Probe/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
             with urllib.request.urlopen(q,timeout=20) as x: body=x.read(); status=getattr(x,"status",None); ctype=x.headers.get("Content-Type")
             raw=body.decode("utf-8","replace"); diag=odds_dom_probe(raw,r.get("active_car_numbers") or [])
             rec.update({"state":"AVAILABLE" if status==200 else "ERROR","http_status":status,"content_type":ctype,"byte_length":len(body),"content_sha256":hashlib.sha256(body).hexdigest(),"diagnostic":diag})
+            if status==200: stages["fetch_successes"]+=1
+            else: recovery.append({"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"reason":"ODDS_HTTP_ERROR","http_status":status})
         except Exception as e:
-            rec.update({"state":"ERROR","error_type":type(e).__name__,"error":str(e)}); recovery.append({"kaisai_date_id":kid,"race_no":rn,"reason":"ODDS_FETCH_ERROR","error_type":type(e).__name__})
+            rec.update({"state":"ERROR","error_type":type(e).__name__,"error":str(e)})
+            recovery.append({"kaisai_date_id":kid,"venue_code":vc,"race_no":rn,"reason":"ODDS_FETCH_ERROR","error_type":type(e).__name__})
         out.append(rec)
+    # Zero samples is always diagnosable; never return an empty recovery queue silently.
+    if not out and not recovery:
+        recovery.append({"reason":"ZERO_SAMPLE_UNEXPLAINED","locked_candidates":len(locked),"source_bound_candidates":len(bound)})
     ok=sum(x.get("state")=="AVAILABLE" for x in out)
-    return {"schema":"JFE-LIVE-ODDS-DOM-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,
+    return {"schema":"JFE-LIVE-ODDS-DOM-PROBE/0.2","service":"JFE","version":VERSION,"target_date":target_date,
       "state":"AVAILABLE" if out and ok==len(out) else ("PARTIAL" if ok else "ERROR"),"acquired_at":now(),"sample_count":len(out),"samples":out,"recovery_queue":recovery,
-      "sample_policy":"FIRST_LOCKED_SOURCE_BOUND_RACE_PER_VENUE","parser_promotion":"NONE_DIAGNOSTIC_ONLY","bet_type_inference":False,"invalid_combination_guard":True,"fabricated_data":False}
+      "binding_diagnostics":stages,"sample_policy":"FIRST_SUCCESSFULLY_SOURCE_BOUND_LOCKED_RACE_PER_VENUE","parser_promotion":"NONE_DIAGNOSTIC_ONLY",
+      "bet_type_inference":False,"invalid_combination_guard":True,"silent_drop":False,"fabricated_data":False}
 
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):

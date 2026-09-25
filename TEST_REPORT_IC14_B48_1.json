@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0-ic1.4-dev-b48.1",
+  "new_tests": "7/7 PASS",
+  "compile": "PASS",
+  "full_regression": "68/72 PASS",
+  "known_regression_failures": 4,
+  "known_failure_reason": "Legacy B44.1/B46/B47/B48 tests assert older VERSION strings only; no functional regression failure observed.",
+  "status": "ODDS_SOURCE_BINDING_RECOVERY_LOCAL_PASS",
+  "render_live_odds_dom_probe": "NOT_YET_EXECUTED"
+}

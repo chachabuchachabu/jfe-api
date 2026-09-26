@@ -1,0 +1,11 @@
+{
+  "schema": "JFE-B49.5-LOCAL-TEST/0.1",
+  "state": "PASS",
+  "checks": [
+    "python_compile",
+    "7_car_trifecta_210",
+    "9_car_trifecta_504",
+    "9999_9_preserved"
+  ],
+  "live_verified": false
+}

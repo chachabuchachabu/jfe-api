@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.4"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.5"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -993,6 +993,39 @@ def _b494_canonicalize(rows,active,ordered,range_mode=False):
         quotes.append(q)
     return quotes,conflicts,rejected
 
+
+def _b495_bind_trifecta_bt5(bt5_tables,active):
+    aset=set(active); quotes={}; conflicts=[]; rejected=[]; axes=[]
+    for t in bt5_tables:
+        table_text=t.get('text') or ''
+        # Axis is the leading car number in the table caption/header text.
+        m=re.match(r'\s*(\d+)\b',table_text)
+        if not m or int(m.group(1)) not in aset:
+            rejected.append({"table_index":t.get('table_index'),"reason":"AXIS_NOT_BOUND"}); continue
+        axis=int(m.group(1)); axes.append(axis)
+        row_hits=0
+        for rm in re.finditer(r'<tr\b[^>]*>(.*?)</tr>',t.get('html') or '',re.I|re.S):
+            rt=txt(rm.group(1))
+            vals=[float(x) for x in re.findall(r'(?<!\d)(\d{1,5}\.\d)(?!\d)',rt)]
+            if len(vals)!=len(active)-2: continue
+            ints=[int(x) for x in re.findall(r'(?<![\d.])(\d+)(?![\d.])',rt)]
+            second=next((x for x in ints if x in aset and x!=axis),None)
+            if second is None:
+                rejected.append({"table_index":t.get('table_index'),"axis":axis,"reason":"SECOND_NOT_BOUND","row_text":rt[:120]}); continue
+            thirds=[x for x in active if x not in (axis,second)]
+            if len(thirds)!=len(vals):
+                rejected.append({"table_index":t.get('table_index'),"axis":axis,"second":second,"reason":"THIRD_COUNT_MISMATCH"}); continue
+            row_hits+=1
+            for third,odds in zip(thirds,vals):
+                key=(axis,second,third)
+                if key in quotes and quotes[key]!=odds:
+                    conflicts.append({"selection":list(key),"first_odds":quotes[key],"other_odds":odds})
+                else: quotes[key]=odds
+        if row_hits!=len(active)-1:
+            rejected.append({"table_index":t.get('table_index'),"axis":axis,"reason":"SECOND_ROW_COUNT_MISMATCH","row_count":row_hits,"expected":len(active)-1})
+    out=[{"selection":list(k),"odds":v} for k,v in sorted(quotes.items())]
+    return out,{"axis_count":len(set(axes)),"axes":sorted(set(axes)),"conflicts":conflicts,"rejected_rows":rejected}
+
 def canonical_market_bind_b494(raw,active):
     tables=_b494_tables(raw); n=len(active); sections={}; evidence=[]
     specs=[('wide',2,'=',False,True),('quinella',2,'=',False,False),('exacta',2,'-',True,False),('trio',3,'=',False,False)]
@@ -1048,12 +1081,12 @@ def live_canonical_market_binding_b494(target_date):
     ob,ost,oct=of['value']; raw=ob.decode('utf-8','replace'); h=hashlib.sha256(ob).hexdigest(); result['odds_source']={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":h}
     cb=_bounded_stage('CANONICAL_BINDING',4,lambda:canonical_market_bind_b494(raw,active)); stages['canonical_binding']={k:v for k,v in cb.items() if k!='value'}
     if cb['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"CANONICAL_BINDING_"+cb['state']}],'ERROR')
-    snap=cb['value']; snap.update({"schema":"JFE-CANONICAL-MARKET-SNAPSHOT/0.1","source_url":odds_url,"content_sha256":h,"acquired_at":now(),"active_car_numbers":active})
+    snap=cb['value']; snap.update({"schema":"JFE-CANONICAL-MARKET-SNAPSHOT/0.2","source_url":odds_url,"content_sha256":h,"acquired_at":now(),"active_car_numbers":active})
     result['market_snapshot']=snap
     return _b494_response(target_date,started,stages,result,recovery,snap['state'])
 
 def _b494_response(target_date,started,stages,result,recovery,state):
-    return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
+    return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.2","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
 
 # ===== DEV-B48 Market/Odds DOM Probe =====
 def _odds_url_from_racedetail(url):
@@ -1715,7 +1748,7 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
-  cmb=re.fullmatch(r"/v1/canonical-market-binding/(\d{4}-\d{2}-\d{2})",p)
+  cmb=re.fullmatch(r"/v1/(?:canonical-market-binding|trifecta-market-binding)/(\d{4}-\d{2}-\d{2})",p)
   if cmb:
    result=live_canonical_market_binding_b494(cmb.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   mdsp=re.fullmatch(r"/v1/market-dom-scope-probe/(\d{4}-\d{2}-\d{2})",p)

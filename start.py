@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b48.3.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b48.4"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -891,6 +891,60 @@ def live_upstream_stage_probe(target_date):
     state="AVAILABLE" if gate.get("state")=="AVAILABLE" else "PARTIAL"
     return {"schema":"JFE-UPSTREAM-STAGE-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"diagnostic_scope":"ONE_SOURCE_BOUND_RACE","all_race_pipeline_executed":False,"always_respond_policy":True,"fabricated_data":False}
 
+
+# ===== DEV-B48.4 Single-Acquisition Entry-Lock -> Odds DOM =====
+def live_single_acquisition_odds_probe(target_date):
+    started=time.time(); recovery=[]
+    names=("race_verification","entry_fetch","entry_parse","entry_integrity","entry_lock","odds_fetch","odds_probe")
+    stages={k:{"state":"NOT_STARTED"} for k in names}; result={"selected_race":None}
+    rv=_bounded_stage("RACE_VERIFICATION",8,lambda:live_race_verification(target_date))
+    stages["race_verification"]={k:v for k,v in rv.items() if k!="value"}
+    if rv["state"]!="COMPLETED":
+        recovery.append({"reason":"RACE_VERIFICATION_"+rv["state"],"error":rv.get("error")})
+        return {"schema":"JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":"ERROR","acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"single_acquisition_reuse":True,"all_race_pipeline_executed":False,"always_respond_policy":True,"fabricated_data":False}
+    base=rv["value"]; chosen=None
+    for venue in base.get("venues",[]):
+        if venue.get("state")!="VERIFIED_VENUE": continue
+        identity={}
+        for ev in venue.get("evidence",[]): identity.update(ev.get("race_identity_evidence") or {})
+        for race_no in venue.get("races",[]):
+            url=canonical_racedetail_url(identity.get(race_no) or identity.get(str(race_no)) or [])
+            if url: chosen=(venue,race_no,url); break
+        if chosen: break
+    if not chosen:
+        recovery.append({"reason":"NO_SOURCE_BOUND_RACE_AFTER_VERIFICATION"})
+        return {"schema":"JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":"ERROR","acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"single_acquisition_reuse":True,"all_race_pipeline_executed":False,"always_respond_policy":True,"fabricated_data":False}
+    venue,race_no,url=chosen; odds_url=_odds_url_from_racedetail(url)
+    result["selected_race"]={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":race_no,"source_racedetail_url":url,"odds_url":odds_url}
+    def efetch():
+        q=urllib.request.Request(url,headers={"User-Agent":"JFE-B48.4/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",None)
+    ef=_bounded_stage("ENTRY_FETCH",6,efetch); stages["entry_fetch"]={k:v for k,v in ef.items() if k!="value"}
+    if ef["state"]!="COMPLETED":
+        recovery.append({"reason":"ENTRY_FETCH_"+ef["state"],"error":ef.get("error")})
+        return {"schema":"JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":"ERROR","acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"single_acquisition_reuse":True,"all_race_pipeline_executed":False,"always_respond_policy":True,"fabricated_data":False}
+    body,status=ef["value"]
+    t=time.time(); parsed=parse_primary_racecard_entries(body.decode("utf-8","replace")) if status==200 else {"state":"ERROR","entries":[],"errors":["HTTP_ERROR"]}; stages["entry_parse"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    t=time.time(); gate=validate_entry_integrity(parsed); stages["entry_integrity"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    active=gate.get("active_car_numbers") or []
+    result["entry"]={"state":gate.get("state"),"entry_count":gate.get("entry_count"),"active_car_numbers":active,"errors":gate.get("errors",[]),"content_sha256":hashlib.sha256(body).hexdigest()}
+    race={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":race_no,"state":gate.get("state"),"integrity":gate}
+    payload=_entry_snapshot_payload(race); sh=_entry_snapshot_hash(payload); sr={"kaisai_date_id":race["kaisai_date_id"],"venue_code":race["venue_code"],"race_no":race_no,"snapshot_id":"%s-%s-%s"%(race["kaisai_date_id"],race_no,sh[:16]),"source_hash":sh,"active_car_numbers":active,"withdrawal_state":payload.get("withdrawal_state","UNKNOWN")}
+    t=time.time(); lock=_new_entry_lock(sr,now()); stages["entry_lock"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}; result["entry_lock"]={"lock_id":lock.get("lock_id"),"lock_state":lock.get("lock_state"),"lock_scope":lock.get("lock_scope"),"entry_snapshot_id":lock.get("entry_snapshot_id")}
+    if not odds_url:
+        recovery.append({"reason":"ODDS_URL_BINDING_ERROR"}); return {"schema":"JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":"ERROR","acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"single_acquisition_reuse":True,"all_race_pipeline_executed":False,"always_respond_policy":True,"fabricated_data":False}
+    def ofetch():
+        q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-B48.4-Odds/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",None),x.headers.get("Content-Type")
+    of=_bounded_stage("ODDS_FETCH",6,ofetch); stages["odds_fetch"]={k:v for k,v in of.items() if k!="value"}
+    if of["state"]!="COMPLETED":
+        recovery.append({"reason":"ODDS_FETCH_"+of["state"],"error":of.get("error")}); state="ERROR"
+    else:
+        ob,ost,oct=of["value"]; t=time.time(); probe=odds_dom_probe(ob.decode("utf-8","replace"),active); stages["odds_probe"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+        result["odds"]={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":hashlib.sha256(ob).hexdigest(),"source_timestamp":probe.get("source_timestamp"),"explicit_bet_type_labels":probe.get("explicit_bet_type_labels"),"bet_type_summary":probe.get("bet_type_summary"),"verified_odds_count":probe.get("verified_odds_count"),"active_car_numbers":probe.get("active_car_numbers")}
+        state="AVAILABLE" if ost==200 and probe.get("verified_odds_count",0)>0 else "PARTIAL"
+    return {"schema":"JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"single_acquisition_reuse":True,"all_race_pipeline_executed":False,"bet_type_inference":False,"invalid_combination_guard":True,"always_respond_policy":True,"fabricated_data":False}
+
 # ===== DEV-B43.2 DOM Structure Probe =====
 def _compact_html(x, limit=420):
     return re.sub(r"\s+"," ",x).strip()[:limit]
@@ -1338,6 +1392,10 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  sap=re.fullmatch(r"/v1/single-acquisition-odds-probe/(\d{4}-\d{2}-\d{2})",p)
+  if sap:
+   result=live_single_acquisition_odds_probe(sap.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   usp=re.fullmatch(r"/v1/upstream-stage-probe/(\d{4}-\d{2}-\d{2})",p)
   if usp:
    result=live_upstream_stage_probe(usp.group(1))

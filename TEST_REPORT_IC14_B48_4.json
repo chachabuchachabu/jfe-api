@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b48.4",
+  "schema": "JFE-SINGLE-ACQUISITION-ODDS-PROBE/0.1",
+  "new_tests": "9/9 PASS",
+  "compile": "PASS",
+  "status": "SINGLE_ACQUISITION_ODDS_LOCAL_PASS",
+  "live_status": "NOT_YET_EXECUTED"
+}

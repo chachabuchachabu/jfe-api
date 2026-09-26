@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.3"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -878,6 +878,73 @@ def _b49_response(target_date,started,stages,result,recovery,state):
       "stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),
       "single_acquisition_reuse":True,"bet_type_inference":False,"invalid_combination_guard":True,"always_respond_policy":True,"fabricated_data":False}
 
+
+# ===== DEV-B49.3 Market DOM Scope Isolation Probe =====
+def _b493_table_candidates(raw, active_car_numbers):
+    """Diagnostic only: inspect individual HTML tables with bounded surrounding context.
+    9999.9 is preserved as a source value; it is never classified as parser error here.
+    """
+    active=sorted({int(x) for x in (active_car_numbers or [])})
+    out=[]
+    starts=list(re.finditer(r"<table\b([^>]*)>",raw,re.I))
+    for idx,m in enumerate(starts):
+        end=raw.find("</table>",m.end())
+        if end<0: continue
+        end+=8
+        frag=raw[m.start():end]
+        frag_text=txt(frag)
+        # Keep only market-looking tables. This is diagnostic selection, not bet-type inference.
+        if not (re.search(r"\b\d{1,5}\.\d\b",frag_text) or any(label in frag_text for label in BET_TYPES)):
+            continue
+        before=raw[max(0,m.start()-1400):m.start()]
+        context=before+frag
+        context_text=txt(context)
+        parsed=parse_kd_odds_sections(context,active)
+        counts={bt:len((rec or {}).get("data") or []) for bt,rec in parsed.items()}
+        attrs=m.group(1) or ""
+        cls=re.search(r'class\s*=\s*["\']([^"\']+)',attrs,re.I)
+        ident=re.search(r'id\s*=\s*["\']([^"\']+)',attrs,re.I)
+        labels=[]
+        for label,(bt,legs) in BET_TYPES.items():
+            if label in context_text and {"label":label,"bet_type":bt} not in labels:
+                labels.append({"label":label,"bet_type":bt})
+        vals=[float(x) for x in re.findall(r"(?<!\d)(\d{1,5}\.\d)(?!\d)",frag_text)]
+        out.append({"table_index":idx,"class":cls.group(1) if cls else None,"id":ident.group(1) if ident else None,
+                    "html_bytes":len(frag.encode()),"text_chars":len(frag_text),"labels_in_context":labels,
+                    "parsed_counts_with_context":counts,"decimal_value_count":len(vals),
+                    "contains_9999_9":9999.9 in vals,"text_sample":frag_text[:650]})
+        if len(out)>=60: break
+    return out
+
+def live_market_dom_scope_probe(target_date):
+    started=time.time(); recovery=[]; stages={k:{"state":"NOT_STARTED"} for k in ("race_verification","entry_fetch","entry_parse","entry_integrity","odds_fetch","dom_scope_scan")}; result={}
+    rv=_bounded_stage("RACE_VERIFICATION",8,lambda:live_race_verification(target_date)); stages["race_verification"]={k:v for k,v in rv.items() if k!="value"}
+    if rv["state"]!="COMPLETED": recovery.append({"reason":"RACE_VERIFICATION_"+rv["state"]}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    chosen,diag=select_source_bound_race_b491(rv["value"]); result["source_binding_diagnostics"]=diag
+    if not chosen: recovery.append({"reason":"NO_SOURCE_BOUND_RACE"}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url); result["selected_race"]={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":rn,"source_racedetail_url":url,"odds_url":odds_url}
+    def efetch():
+        q=urllib.request.Request(url,headers={"User-Agent":"JFE-B49.3-Entry/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",200)
+    ef=_bounded_stage("ENTRY_FETCH",6,efetch); stages["entry_fetch"]={k:v for k,v in ef.items() if k!="value"}
+    if ef["state"]!="COMPLETED": recovery.append({"reason":"ENTRY_FETCH_"+ef["state"]}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    body,_=ef["value"]; t=time.time(); pe=parse_primary_racecard_entries(body.decode("utf-8","replace")); stages["entry_parse"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    t=time.time(); integ=validate_entry_integrity(pe); stages["entry_integrity"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}; active=integ.get("active_car_numbers") or []; result["entry"]={"state":integ.get("state"),"entry_count":integ.get("entry_count"),"active_car_numbers":active}
+    if integ.get("state")!="AVAILABLE": recovery.append({"reason":"ENTRY_INTEGRITY_NOT_AVAILABLE"}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    def ofetch():
+        q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-B49.3-DOM-Scope/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",200),x.headers.get("Content-Type")
+    of=_bounded_stage("ODDS_FETCH",6,ofetch); stages["odds_fetch"]={k:v for k,v in of.items() if k!="value"}
+    if of["state"]!="COMPLETED": recovery.append({"reason":"ODDS_FETCH_"+of["state"]}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    ob,ost,oct=of["value"]; raw=ob.decode("utf-8","replace"); result["odds_source"]={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":hashlib.sha256(ob).hexdigest()}
+    ds=_bounded_stage("DOM_SCOPE_SCAN",4,lambda:_b493_table_candidates(raw,active)); stages["dom_scope_scan"]={k:v for k,v in ds.items() if k!="value"}
+    if ds["state"]!="COMPLETED": recovery.append({"reason":"DOM_SCOPE_SCAN_"+ds["state"]}); return _b493_response(target_date,started,stages,result,recovery,"ERROR")
+    candidates=ds["value"]; result["dom_scope"]={"candidate_table_count":len(candidates),"candidates":candidates,"canonical_scope_selected":False,"promotion":"NONE_DIAGNOSTIC_ONLY","source_value_9999_9_policy":"PRESERVE_UNMODIFIED"}
+    return _b493_response(target_date,started,stages,result,recovery,"AVAILABLE")
+
+def _b493_response(target_date,started,stages,result,recovery,state):
+    return {"schema":"JFE-MARKET-DOM-SCOPE-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"parser_promotion":"NONE_DIAGNOSTIC_ONLY","bet_type_inference":False,"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","always_respond_policy":True,"fabricated_data":False}
+
 # ===== DEV-B48 Market/Odds DOM Probe =====
 def _odds_url_from_racedetail(url):
     """Use the already source-bound racedetail URL; only switch the official pageType view."""
@@ -1538,6 +1605,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  mdsp=re.fullmatch(r"/v1/market-dom-scope-probe/(\d{4}-\d{2}-\d{2})",p)
+  if mdsp:
+   result=live_market_dom_scope_probe(mdsp.group(1)); return self.j(200 if result.get("state")!="ERROR" else 503,result)
   mb=re.fullmatch(r"/v1/market-binding/(\d{4}-\d{2}-\d{2})",p)
   if mb:
    result=live_market_binding(mb.group(1)); self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result); return

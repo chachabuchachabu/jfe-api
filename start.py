@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -798,20 +798,34 @@ def bind_market_snapshot(parsed, active_car_numbers, source_timestamp, acquired_
       "sections":sections,"market":market,"verified_unique_odds_count":total,"conflict_count":conflicts,"bet_type_inference":False,
       "fixed_rider_count_assumption":False,"fabricated_data":False}
 
+def select_source_bound_race_b491(base):
+    chosen=None; diag={"candidate_count":base.get("candidate_count",0),"verified_venue_count":base.get("verified_venue_count",0),"venue_count":len(base.get("venues",[])),"evidence_items_scanned":0,"identity_keys_found":0,"url_candidates_checked":0,"rejected":[]}
+    for venue in base.get("venues",[]):
+        if venue.get("state")!="VERIFIED_VENUE":
+            diag["rejected"].append({"venue_code":venue.get("venue_code"),"reason":"NOT_VERIFIED_VENUE","state":venue.get("state")}); continue
+        identity={}; evidence=venue.get("evidence") or []
+        if isinstance(evidence,dict): evidence=[evidence]
+        for ev in evidence:
+            if not isinstance(ev,dict): continue
+            diag["evidence_items_scanned"]+=1; identity.update(ev.get("race_identity_evidence") or {})
+        diag["identity_keys_found"]+=len(identity)
+        for race_no in venue.get("races",[]):
+            urls=identity.get(race_no) or identity.get(str(race_no)) or []
+            diag["url_candidates_checked"]+=len(urls) if isinstance(urls,list) else 1
+            url=canonical_racedetail_url(urls)
+            if url: chosen=(venue,race_no,url); break
+        if chosen: break
+    return chosen,diag
+
 def live_market_binding(target_date):
     started=time.time(); names=("race_verification","entry_fetch","entry_parse","entry_integrity","entry_lock","odds_fetch","market_binding")
     stages={k:{"state":"NOT_STARTED"} for k in names}; recovery=[]; result={}
     rv=_bounded_stage("RACE_VERIFICATION",8,lambda:live_race_verification(target_date)); stages["race_verification"]={k:v for k,v in rv.items() if k!="value"}
     if rv["state"]!="COMPLETED": recovery.append({"reason":"RACE_VERIFICATION_"+rv["state"]}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
-    verified=[v for v in rv["value"].get("venues",[]) if v.get("meeting_state")=="VERIFIED_VENUE"]
-    chosen=None
-    for venue in verified:
-        for rn in venue.get("races") or []:
-            ident=(venue.get("evidence") or {}).get("race_identity_urls",{}).get(str(rn)) or []
-            u=canonical_racedetail_url(ident)
-            if u: chosen=(venue,int(rn),u); break
-        if chosen: break
-    if not chosen: recovery.append({"reason":"NO_SOURCE_BOUND_RACE"}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
+    base=rv["value"]; chosen,bind_diag=select_source_bound_race_b491(base)
+    result["source_binding_diagnostics"]=bind_diag
+    if not chosen:
+        recovery.append({"reason":"NO_SOURCE_BOUND_RACE_AFTER_VERIFICATION","binding_diagnostics":bind_diag}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
     venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url)
     result["selected_race"]={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":rn,"source_racedetail_url":url,"odds_url":odds_url}
     def efetch():

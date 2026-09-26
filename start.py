@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b48.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b48.3.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1340,7 +1340,8 @@ class S(BaseHTTPRequestHandler):
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
   usp=re.fullmatch(r"/v1/upstream-stage-probe/(\d{4}-\d{2}-\d{2})",p)
   if usp:
-   return self.send_json(200,live_upstream_stage_probe(usp.group(1)))
+   result=live_upstream_stage_probe(usp.group(1))
+   return self.j(200 if result["state"]!="ERROR" else 503,result)
   odp=re.fullmatch(r"/v1/odds-dom-probe/(\d{4}-\d{2}-\d{2})",p)
   if odp:
    result=live_odds_dom_probe(odp.group(1))

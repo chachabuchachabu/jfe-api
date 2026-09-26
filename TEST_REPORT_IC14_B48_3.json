@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0-ic1.4-dev-b48.3",
+  "new_tests": "9/9 PASS",
+  "compile": "PASS",
+  "full_suite": "81/90 PASS",
+  "full_suite_detail": "8 failures + 1 error",
+  "full_suite_note": "Legacy B44/B46/B48/B48.1/B48.2 tests pin older VERSION/schema/control-flow assumptions; retained and not counted as passes.",
+  "status": "UPSTREAM_STAGE_DECOMPOSITION_LOCAL_PASS",
+  "render_live": "NOT_YET_EXECUTED"
+}

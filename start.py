@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -818,40 +818,63 @@ def select_source_bound_race_b491(base):
     return chosen,diag
 
 def live_market_binding(target_date):
-    started=time.time(); names=("race_verification","entry_fetch","entry_parse","entry_integrity","entry_lock","odds_fetch","market_binding")
+    """B49.2: bounded market scan/binding; fail closed and always return diagnostics."""
+    started=time.time(); names=("race_verification","entry_fetch","entry_parse","entry_integrity","entry_lock","odds_fetch","market_scan_binding")
     stages={k:{"state":"NOT_STARTED"} for k in names}; recovery=[]; result={}
     rv=_bounded_stage("RACE_VERIFICATION",8,lambda:live_race_verification(target_date)); stages["race_verification"]={k:v for k,v in rv.items() if k!="value"}
     if rv["state"]!="COMPLETED": recovery.append({"reason":"RACE_VERIFICATION_"+rv["state"]}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
-    base=rv["value"]; chosen,bind_diag=select_source_bound_race_b491(base)
-    result["source_binding_diagnostics"]=bind_diag
+    base=rv["value"]; chosen,bind_diag=select_source_bound_race_b491(base); result["source_binding_diagnostics"]=bind_diag
     if not chosen:
         recovery.append({"reason":"NO_SOURCE_BOUND_RACE_AFTER_VERIFICATION","binding_diagnostics":bind_diag}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
     venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url)
     result["selected_race"]={"kaisai_date_id":venue.get("kaisai_date_id"),"venue_code":venue.get("venue_code"),"race_no":rn,"source_racedetail_url":url,"odds_url":odds_url}
     def efetch():
-        q=urllib.request.Request(url,headers={"User-Agent":"JFE-B49-Entry/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
-        with urllib.request.urlopen(q,timeout=6) as x:return x.read(),getattr(x,"status",200),x.headers.get("Content-Type")
+        q=urllib.request.Request(url,headers={"User-Agent":"JFE-B49.2-Entry/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",200),x.headers.get("Content-Type")
     ef=_bounded_stage("ENTRY_FETCH",6,efetch); stages["entry_fetch"]={k:v for k,v in ef.items() if k!="value"}
     if ef["state"]!="COMPLETED": recovery.append({"reason":"ENTRY_FETCH_"+ef["state"]}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
-    body,_,_=ef["value"]; t=time.time(); entries,errors=parse_primary_racecard_entries(body.decode("utf-8","replace")); stages["entry_parse"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
-    t=time.time(); integ=validate_entry_integrity({"entries":entries,"errors":errors}); stages["entry_integrity"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    body,_,_=ef["value"]
+    t=time.time(); parsed_entry=parse_primary_racecard_entries(body.decode("utf-8","replace")); stages["entry_parse"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    t=time.time(); integ=validate_entry_integrity(parsed_entry); stages["entry_integrity"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
     active=integ.get("active_car_numbers") or []
-    if integ.get("state")!="AVAILABLE": recovery.append({"reason":"ENTRY_INTEGRITY_NOT_AVAILABLE"}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
-    stages["entry_lock"]={"state":"COMPLETED","elapsed_ms":0.0}; result["entry"]={"state":"AVAILABLE","entry_count":len(entries),"active_car_numbers":active}
+    if integ.get("state")!="AVAILABLE": recovery.append({"reason":"ENTRY_INTEGRITY_NOT_AVAILABLE","errors":integ.get("errors",[])}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
+    stages["entry_lock"]={"state":"COMPLETED","elapsed_ms":0.0}; result["entry"]={"state":"AVAILABLE","entry_count":integ.get("entry_count"),"active_car_numbers":active}
     def ofetch():
-        q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-B49-Odds/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
-        with urllib.request.urlopen(q,timeout=6) as x:return x.read(),getattr(x,"status",200),x.headers.get("Content-Type")
+        q=urllib.request.Request(odds_url,headers={"User-Agent":"JFE-B49.2-Odds/0.1","Accept-Encoding":"identity","Cache-Control":"no-cache"})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,"status",200),x.headers.get("Content-Type")
     of=_bounded_stage("ODDS_FETCH",6,ofetch); stages["odds_fetch"]={k:v for k,v in of.items() if k!="value"}
     if of["state"]!="COMPLETED": recovery.append({"reason":"ODDS_FETCH_"+of["state"]}); return _b49_response(target_date,started,stages,result,recovery,"ERROR")
-    ob,ost,oct=of["value"]; raw=ob.decode("utf-8","replace"); acquired=now(); probe=odds_dom_probe(raw,active); parsed=parse_kd_odds_sections(raw,active)
-    t=time.time(); snap=bind_market_snapshot(parsed,active,probe.get("source_timestamp"),acquired,odds_url,hashlib.sha256(ob).hexdigest()); stages["market_binding"]={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
-    result["odds_source"]={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":hashlib.sha256(ob).hexdigest(),"source_timestamp":probe.get("source_timestamp")}
-    result["market_snapshot"]=snap
+    ob,ost,oct=of["value"]; raw=ob.decode("utf-8","replace"); acquired=now(); content_hash=hashlib.sha256(ob).hexdigest()
+    result["odds_source"]={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":content_hash}
+    def scan_bind():
+        scan_started=time.time(); text=txt(raw)
+        stamps=re.findall(r"(20\d{2}[/-]\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2})現在",text)
+        source_timestamp=stamps[-1] if stamps else None
+        parsed=parse_kd_odds_sections(raw,active)
+        raw_counts={bt:len((rec or {}).get("data") or []) for bt,rec in parsed.items()}
+        raw_total=sum(raw_counts.values())
+        # Diagnostic hard ceiling: never promote an unexpectedly huge scan.
+        ceiling=2000
+        if raw_total>ceiling:
+            return {"guard":"CANDIDATE_LIMIT_EXCEEDED","raw_candidate_count":raw_total,"candidate_limit":ceiling,"raw_counts":raw_counts,"source_timestamp":source_timestamp}
+        snap=bind_market_snapshot(parsed,active,source_timestamp,acquired,odds_url,content_hash)
+        return {"guard":"OK","raw_candidate_count":raw_total,"candidate_limit":ceiling,"raw_counts":raw_counts,"source_timestamp":source_timestamp,"snapshot":snap,"scan_elapsed_ms":round((time.time()-scan_started)*1000,1)}
+    ms=_bounded_stage("MARKET_SCAN_BINDING",5,scan_bind); stages["market_scan_binding"]={k:v for k,v in ms.items() if k!="value"}
+    if ms["state"]!="COMPLETED":
+        recovery.append({"reason":"MARKET_BINDING_"+ms["state"],"error_type":ms.get("error_type"),"error":ms.get("error")})
+        result["market_binding_diagnostics"]={"processed":False,"reason":"MARKET_BINDING_"+ms["state"]}
+        return _b49_response(target_date,started,stages,result,recovery,"ERROR")
+    m=ms["value"]; result["odds_source"]["source_timestamp"]=m.get("source_timestamp")
+    result["market_binding_diagnostics"]={k:v for k,v in m.items() if k!="snapshot"}
+    if m.get("guard")!="OK":
+        recovery.append({"reason":m.get("guard"),"raw_candidate_count":m.get("raw_candidate_count"),"candidate_limit":m.get("candidate_limit")})
+        return _b49_response(target_date,started,stages,result,recovery,"PARTIAL")
+    snap=m["snapshot"]; result["market_snapshot"]=snap
     state="AVAILABLE" if ost==200 and snap.get("verified_unique_odds_count",0)>0 and snap.get("conflict_count",0)==0 else "PARTIAL"
     return _b49_response(target_date,started,stages,result,recovery,state)
 
 def _b49_response(target_date,started,stages,result,recovery,state):
-    return {"schema":"JFE-LIVE-MARKET-BINDING/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),
+    return {"schema":"JFE-LIVE-MARKET-BINDING/0.2","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),
       "stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),
       "single_acquisition_reuse":True,"bet_type_inference":False,"invalid_combination_guard":True,"always_respond_policy":True,"fabricated_data":False}
 

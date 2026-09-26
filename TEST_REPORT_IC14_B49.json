@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0-ic1.4-dev-b49",
+  "schema": "JFE-LIVE-MARKET-BINDING/0.1",
+  "new_tests": "9/9 PASS",
+  "compile": "PASS",
+  "status": "MARKET_BINDING_LOCAL_PASS",
+  "live_status": "NOT_YET_EXECUTED"
+}

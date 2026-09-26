@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.4"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -945,6 +945,116 @@ def live_market_dom_scope_probe(target_date):
 def _b493_response(target_date,started,stages,result,recovery,state):
     return {"schema":"JFE-MARKET-DOM-SCOPE-PROBE/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"parser_promotion":"NONE_DIAGNOSTIC_ONLY","bet_type_inference":False,"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","always_respond_policy":True,"fabricated_data":False}
 
+
+# ===== DEV-B49.4 Canonical Market Binding =====
+def _b494_tables(raw):
+    out=[]
+    for idx,m in enumerate(re.finditer(r'<table\b([^>]*)>(.*?)</table>',raw,re.I|re.S)):
+        attrs=m.group(1) or ''; body=m.group(2); t=txt(body)
+        cm=re.search(r'class\s*=\s*["\']([^"\']+)',attrs,re.I)
+        out.append({"table_index":idx,"class":cm.group(1) if cm else None,"html":m.group(0),"text":t})
+    return out
+
+def _b494_expected(n,bt):
+    if bt in ('wide','quinella'): return n*(n-1)//2
+    if bt=='exacta': return n*(n-1)
+    if bt=='trio': return n*(n-1)*(n-2)//6
+    if bt=='trifecta': return n*(n-1)*(n-2)
+    return 0
+
+def _b494_rank_rows(text, legs, sep, range_mode=False):
+    # ranking tables have: rank, selection, quote. Parse only explicit selection syntax.
+    if legs==2: selpat=r'(\d+)\s*'+re.escape(sep)+r'\s*(\d+)'
+    else: selpat=r'(\d+)\s*'+re.escape(sep)+r'\s*(\d+)\s*'+re.escape(sep)+r'\s*(\d+)'
+    if range_mode:
+        pat=r'\b\d+\s+'+selpat+r'\s+(\d{1,5}\.\d)\s*[～~〜-]\s*(\d{1,5}\.\d)'
+    else:
+        pat=r'\b\d+\s+'+selpat+r'\s+(\d{1,5}\.\d)'
+    rows=[]
+    for m in re.finditer(pat,text):
+        nums=[int(m.group(i)) for i in range(1,legs+1)]
+        if range_mode: rows.append({"selection":nums,"odds_min":float(m.group(legs+1)),"odds_max":float(m.group(legs+2))})
+        else: rows.append({"selection":nums,"odds":float(m.group(legs+1))})
+    return rows
+
+def _b494_canonicalize(rows,active,ordered,range_mode=False):
+    aset=set(active); unique={}; conflicts=[]; rejected=[]
+    for r in rows:
+        sel=tuple(r['selection'] if ordered else sorted(r['selection']))
+        if len(sel)!=len(set(sel)) or not set(sel).issubset(aset): rejected.append({"selection":list(sel),"reason":"INVALID_SELECTION"}); continue
+        val=(r.get('odds_min'),r.get('odds_max')) if range_mode else r.get('odds')
+        if sel in unique and unique[sel]!=val: conflicts.append({"selection":list(sel),"first":unique[sel],"other":val}); continue
+        unique[sel]=val
+    quotes=[]
+    for sel,val in sorted(unique.items()):
+        q={"selection":list(sel)}
+        if range_mode: q.update({"odds_min":val[0],"odds_max":val[1]})
+        else:q['odds']=val
+        quotes.append(q)
+    return quotes,conflicts,rejected
+
+def canonical_market_bind_b494(raw,active):
+    tables=_b494_tables(raw); n=len(active); sections={}; evidence=[]
+    specs=[('wide',2,'=',False,True),('quinella',2,'=',False,False),('exacta',2,'-',True,False),('trio',3,'=',False,False)]
+    for bt,legs,sep,ordered,range_mode in specs:
+        expected=_b494_expected(n,bt); matches=[]
+        for t in tables:
+            if not range_mode and re.search(r'\d{1,5}\.\d\s*[～~〜]\s*\d{1,5}\.\d',t['text']):
+                continue
+            rows=_b494_rank_rows(t['text'],legs,sep,range_mode)
+            quotes,conflicts,rejected=_b494_canonicalize(rows,active,ordered,range_mode)
+            if len(quotes)==expected and not conflicts:
+                matches.append((t,quotes,rejected))
+        # duplicate ascending/descending ranking tables are allowed only when their canonical quote maps agree.
+        chosen=None; consistent=True
+        if matches:
+            chosen=matches[0]
+            def key(q): return tuple(q['selection'])
+            base={key(q):tuple(sorted((k,v) for k,v in q.items() if k!='selection')) for q in chosen[1]}
+            for _,qs,_ in matches[1:]:
+                cur={key(q):tuple(sorted((k,v) for k,v in q.items() if k!='selection')) for q in qs}
+                if cur!=base: consistent=False; break
+        if chosen and consistent:
+            sections[bt]={"state":"AVAILABLE","expected_unique_count":expected,"unique_odds_count":len(chosen[1]),"table_complete":True,"quotes":chosen[1],"canonical_table_index":chosen[0]['table_index'],"equivalent_table_count":len(matches),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED"}
+        elif chosen:
+            sections[bt]={"state":"PARTIAL","expected_unique_count":expected,"unique_odds_count":len(chosen[1]),"table_complete":False,"quotes":[],"reason":"CANONICAL_TABLE_DISAGREEMENT","candidate_table_count":len(matches)}
+        else:
+            sections[bt]={"state":"UNKNOWN","expected_unique_count":expected,"unique_odds_count":0,"table_complete":False,"quotes":[],"reason":"NO_COMPLETE_CANONICAL_TABLE"}
+    # Trifecta: B49.3 proved n source-axis bt5 tables, but ranking tables are only partial top/bottom lists.
+    # Do not fabricate the 210 ordered quotes until bt5 cell coordinates are source-bound.
+    bt5=[t for t in tables if t.get('class') and 'odds_table' in t['class'].split() and 'bt5' in t['class'].split()]
+    sections['trifecta']={"state":"PARTIAL" if bt5 else "UNKNOWN","expected_unique_count":_b494_expected(n,'trifecta'),"unique_odds_count":0,"table_complete":False,"quotes":[],"bt5_axis_table_count":len(bt5),"reason":"BT5_CELL_COORDINATE_BINDING_PENDING" if bt5 else "BT5_TABLE_NOT_FOUND","source_value_9999_9_policy":"PRESERVE_UNMODIFIED"}
+    available=sum(v['state']=='AVAILABLE' for v in sections.values())
+    return {"state":"AVAILABLE" if available==5 else ("PARTIAL" if available else "UNKNOWN"),"sections":sections,"available_section_count":available,"canonical_scope_selected":available>0,"bet_type_inference":False,"fabricated_data":False}
+
+def live_canonical_market_binding_b494(target_date):
+    started=time.time(); stages={k:{"state":"NOT_STARTED"} for k in ('race_verification','entry_fetch','entry_parse','entry_integrity','odds_fetch','canonical_binding')}; recovery=[]; result={}
+    rv=_bounded_stage('RACE_VERIFICATION',8,lambda:live_race_verification(target_date)); stages['race_verification']={k:v for k,v in rv.items() if k!='value'}
+    if rv['state']!='COMPLETED': return _b494_response(target_date,started,stages,result,[{"reason":"RACE_VERIFICATION_"+rv['state']}],'ERROR')
+    chosen,diag=select_source_bound_race_b491(rv['value']); result['source_binding_diagnostics']=diag
+    if not chosen:return _b494_response(target_date,started,stages,result,[{"reason":"NO_SOURCE_BOUND_RACE"}],'ERROR')
+    venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url); result['selected_race']={"kaisai_date_id":venue.get('kaisai_date_id'),"venue_code":venue.get('venue_code'),"race_no":rn,"source_racedetail_url":url,"odds_url":odds_url}
+    def fetch1(u,ua):
+        q=urllib.request.Request(u,headers={'User-Agent':ua,'Accept-Encoding':'identity','Cache-Control':'no-cache'})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,'status',200),x.headers.get('Content-Type')
+    ef=_bounded_stage('ENTRY_FETCH',6,lambda:fetch1(url,'JFE-B49.4-Entry/0.1')); stages['entry_fetch']={k:v for k,v in ef.items() if k!='value'}
+    if ef['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"ENTRY_FETCH_"+ef['state']}],'ERROR')
+    eb,_,_=ef['value']; t=time.time(); pe=parse_primary_racecard_entries(eb.decode('utf-8','replace')); stages['entry_parse']={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
+    t=time.time(); integ=validate_entry_integrity(pe); stages['entry_integrity']={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}; active=integ.get('active_car_numbers') or []
+    result['entry']={"state":integ.get('state'),"entry_count":integ.get('entry_count'),"active_car_numbers":active}
+    if integ.get('state')!='AVAILABLE':return _b494_response(target_date,started,stages,result,[{"reason":"ENTRY_INTEGRITY_NOT_AVAILABLE"}],'ERROR')
+    of=_bounded_stage('ODDS_FETCH',6,lambda:fetch1(odds_url,'JFE-B49.4-Canonical/0.1')); stages['odds_fetch']={k:v for k,v in of.items() if k!='value'}
+    if of['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"ODDS_FETCH_"+of['state']}],'ERROR')
+    ob,ost,oct=of['value']; raw=ob.decode('utf-8','replace'); h=hashlib.sha256(ob).hexdigest(); result['odds_source']={"http_status":ost,"content_type":oct,"byte_length":len(ob),"content_sha256":h}
+    cb=_bounded_stage('CANONICAL_BINDING',4,lambda:canonical_market_bind_b494(raw,active)); stages['canonical_binding']={k:v for k,v in cb.items() if k!='value'}
+    if cb['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"CANONICAL_BINDING_"+cb['state']}],'ERROR')
+    snap=cb['value']; snap.update({"schema":"JFE-CANONICAL-MARKET-SNAPSHOT/0.1","source_url":odds_url,"content_sha256":h,"acquired_at":now(),"active_car_numbers":active})
+    result['market_snapshot']=snap
+    return _b494_response(target_date,started,stages,result,recovery,snap['state'])
+
+def _b494_response(target_date,started,stages,result,recovery,state):
+    return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.1","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
+
 # ===== DEV-B48 Market/Odds DOM Probe =====
 def _odds_url_from_racedetail(url):
     """Use the already source-bound racedetail URL; only switch the official pageType view."""
@@ -1605,6 +1715,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  cmb=re.fullmatch(r"/v1/canonical-market-binding/(\d{4}-\d{2}-\d{2})",p)
+  if cmb:
+   result=live_canonical_market_binding_b494(cmb.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   mdsp=re.fullmatch(r"/v1/market-dom-scope-probe/(\d{4}-\d{2}-\d{2})",p)
   if mdsp:
    result=live_market_dom_scope_probe(mdsp.group(1)); return self.j(200 if result.get("state")!="ERROR" else 503,result)

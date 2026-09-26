@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0-ic1.4-dev-b48.2",
+  "schema": "JFE-LIVE-ODDS-DOM-PROBE/0.3",
+  "new_tests": "9/9 PASS",
+  "compile": "PASS",
+  "full_suite": "73/81 PASS",
+  "full_suite_note": "8 legacy B44/B46/B48/B48.1 assertions fail/error because they pin older VERSION/schema/control-flow assumptions; B48.2 intentionally changes diagnostic control flow. These were not counted as passes.",
+  "status": "BOUNDED_STAGE_DIAGNOSTICS_LOCAL_PASS",
+  "render_live": "NOT_YET_EXECUTED"
+}

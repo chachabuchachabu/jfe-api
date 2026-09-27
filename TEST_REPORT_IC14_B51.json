@@ -1,0 +1,1 @@
+{"version":"1.0.0-ic1.4-dev-b51","status":"LOCAL_TEST_PASS","tests":{"python_compile":"PASS","girls_line_not_applicable":"PASS","standard_line_block":"PASS","cross_source_block":"PASS","outlier_safety_block":"PASS","strict_ready_path":"PASS","legacy_neutral_default_adapter_used":false},"live_verified":false}

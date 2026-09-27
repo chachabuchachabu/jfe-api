@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b50"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b51"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1893,6 +1893,57 @@ def live_gpt_race_input_b50(target_date):
     ri=build_gpt_race_input_b50(upstream)
     return {'schema':'JFE-GPT-HANDOFF/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if ri.get('state')=='READY_FOR_GPT' else 'PARTIAL','acquired_at':now(),'race_input':ri,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+
+# ===== DEV-B51 Johnny Engine Strict Integration Gate =====
+def _b51_is_girls_race(riders):
+    """L-class is the explicit JFE signal for Girls Keirin; do not infer formations."""
+    return bool(riders) and all(str(r.get('grade') or '').upper().startswith('L') for r in riders)
+
+def build_je_integration_b51(race_input):
+    ri=race_input or {}
+    riders=ri.get('riders') or []
+    quality=dict(ri.get('quality') or {})
+    girls=_b51_is_girls_race(riders)
+    lines=dict(ri.get('lines') or {})
+    if girls:
+        lines={'state':'NOT_APPLICABLE','formations':[],
+               'reason':'GIRLS_KEIRIN_INDIVIDUAL_RACE_NO_LINE_FORMATION',
+               'applicability_basis':'ALL_RIDERS_L_CLASS'}
+    blockers=[]
+    comp=quality.get('completeness') or {}
+    if not comp.get('entry'): blockers.append('ENTRY_NOT_AVAILABLE')
+    if not comp.get('market_all_5_bet_types'): blockers.append('MARKET_NOT_COMPLETE')
+    if not quality.get('schema_validity'): blockers.append('SCHEMA_INVALID')
+    if not quality.get('timestamp_integrity'): blockers.append('TIMESTAMP_INTEGRITY_FAILED')
+    if not girls and lines.get('state')!='AVAILABLE': blockers.append('LINES_UNKNOWN')
+    csm=quality.get('cross_source_match') or {}
+    if csm.get('state')!='AVAILABLE': blockers.append('CROSS_SOURCE_MATCH_UNKNOWN')
+    # Unknown outlier safety remains visible, but B51 does not fabricate a numeric safety score.
+    outlier=quality.get('outlier_safety') or {}
+    if outlier.get('state')!='AVAILABLE': blockers.append('OUTLIER_SAFETY_UNKNOWN')
+    gate='PASS' if not blockers else 'BLOCKED'
+    return {
+      'schema':'JFE-JOHNNY-INTEGRATION/0.1','contract_version':'B51','state':'READY_FOR_JE' if gate=='PASS' else 'BLOCKED',
+      'race_id':ri.get('race_id'),'race_type':'GIRLS_KEIRIN' if girls else 'STANDARD_KEIRIN',
+      'riders':riders,'lines':lines,'market':ri.get('market'),
+      'provenance':ri.get('provenance'),'quality':quality,
+      'data_gate':{'state':gate,'blockers':blockers,'policy':'STRICT_NO_DEFAULTS_NO_FABRICATION'},
+      'execution':{'state':'NOT_EXECUTED' if gate!='PASS' else 'READY','reason':'DATA_GATE_BLOCKED' if gate!='PASS' else None},
+      'legacy_neutral_default_adapter_used':False,'fabricated_data':False}
+
+def live_je_integration_b51(target_date):
+    started=time.time()
+    b50=live_gpt_race_input_b50(target_date)
+    ri=b50.get('race_input')
+    if not ri:
+        return {'schema':'JFE-JOHNNY-INTEGRATION-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,
+                'state':'ERROR','race_input':None,'integration':None,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    integ=build_je_integration_b51(ri)
+    return {'schema':'JFE-JOHNNY-INTEGRATION-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,
+            'state':'AVAILABLE','race_input_state':ri.get('state'),'integration':integ,
+            'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -1902,6 +1953,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  jei=re.fullmatch(r"/v1/johnny-engine/integration/(\d{4}-\d{2}-\d{2})",p)
+  if jei:
+   result=live_je_integration_b51(jei.group(1)); return self.j(200 if result.get("state")=="AVAILABLE" else 503,result)
   gri=re.fullmatch(r"/v1/gpt/race-input/(\d{4}-\d{2}-\d{2})",p)
   if gri:
    result=live_gpt_race_input_b50(gri.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

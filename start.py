@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.5.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b50"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1115,7 +1115,7 @@ def live_canonical_market_binding_b494(target_date):
     if ef['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"ENTRY_FETCH_"+ef['state']}],'ERROR')
     eb,_,_=ef['value']; t=time.time(); pe=parse_primary_racecard_entries(eb.decode('utf-8','replace')); stages['entry_parse']={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}
     t=time.time(); integ=validate_entry_integrity(pe); stages['entry_integrity']={"state":"COMPLETED","elapsed_ms":round((time.time()-t)*1000,1)}; active=integ.get('active_car_numbers') or []
-    result['entry']={"state":integ.get('state'),"entry_count":integ.get('entry_count'),"active_car_numbers":active}
+    result['entry']={"state":integ.get('state'),"entry_count":integ.get('entry_count'),"active_car_numbers":active,"entries":pe.get('entries') or [],"integrity":integ}
     if integ.get('state')!='AVAILABLE':return _b494_response(target_date,started,stages,result,[{"reason":"ENTRY_INTEGRITY_NOT_AVAILABLE"}],'ERROR')
     of=_bounded_stage('ODDS_FETCH',6,lambda:fetch1(odds_url,'JFE-B49.4-Canonical/0.1')); stages['odds_fetch']={k:v for k,v in of.items() if k!='value'}
     if of['state']!='COMPLETED':return _b494_response(target_date,started,stages,result,[{"reason":"ODDS_FETCH_"+of['state']}],'ERROR')
@@ -1829,6 +1829,70 @@ def live_daily_discovery(target_date):
                 "acquired_at":acquired_at,"transport":"RENDER_HTTP","error_type":type(e).__name__,
                 "error":str(e),"venues":[],"venue_count":0,"fabricated_data":False}
 
+
+# ===== DEV-B50 GPT Handoff Contract =====
+def _b50_iso8601_aware(value):
+    return bool(isinstance(value,str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",value))
+
+def _b50_market_complete(market):
+    sections=(market or {}).get('sections') or {}
+    required=('wide','quinella','exacta','trio','trifecta')
+    return all((sections.get(k) or {}).get('state')=='AVAILABLE' and (sections.get(k) or {}).get('table_complete') is True for k in required)
+
+def build_gpt_race_input_b50(binding):
+    result=(binding or {}).get('result') or {}
+    race=result.get('selected_race') or {}
+    entry=result.get('entry') or {}
+    market=result.get('market_snapshot') or {}
+    entries=entry.get('entries') or []
+    acquired_at=market.get('acquired_at') or binding.get('acquired_at')
+    active=entry.get('active_car_numbers') or []
+    entry_ok=(entry.get('state')=='AVAILABLE' and len(entries)==len(active) and bool(active))
+    market_ok=(market.get('state')=='AVAILABLE' and _b50_market_complete(market))
+    timestamp_ok=_b50_iso8601_aware(acquired_at)
+    schema_ok=bool(race.get('kaisai_date_id') and race.get('race_no') and entry_ok and market_ok)
+    # B50 never invents line formation or cross-source corroboration. They remain explicit UNKNOWN.
+    blockers=[]
+    if not entry_ok: blockers.append('ENTRY_NOT_AVAILABLE')
+    if not market_ok: blockers.append('MARKET_NOT_COMPLETE')
+    if not timestamp_ok: blockers.append('MARKET_TIMESTAMP_NOT_TIMEZONE_AWARE')
+    blockers += ['LINES_UNKNOWN','CROSS_SOURCE_MATCH_UNKNOWN']
+    handoff_state='READY_FOR_GPT' if schema_ok and timestamp_ok else 'PARTIAL'
+    data_gate_state='BLOCKED' if blockers else 'PASS'
+    riders=[]
+    for e in entries:
+        riders.append({k:e.get(k) for k in ('car_no','rider_name','prefecture','age','term','grade','race_score')})
+    return {
+      'schema':'JFE-GPT-RACE-INPUT/0.1','contract_version':'B50','state':handoff_state,
+      'race_id':{'kaisai_date_id':race.get('kaisai_date_id'),'venue_code':race.get('venue_code'),'race_no':race.get('race_no')},
+      'scheduled_start':{'state':'UNKNOWN','value':None,'reason':'NOT_BOUND_IN_B50'},
+      'riders':riders,
+      'lines':{'state':'UNKNOWN','formations':[],'reason':'NO_VERIFIED_LINE_SOURCE_IN_B50'},
+      'market':market,
+      'provenance':{
+        'entry_source_url':race.get('source_racedetail_url'),'market_source_url':market.get('source_url') or race.get('odds_url'),
+        'market_content_sha256':market.get('content_sha256'),'acquired_at':acquired_at,
+        'upstream_schema':binding.get('schema'),'upstream_version':binding.get('version')},
+      'quality':{
+        'completeness':{'entry':entry_ok,'market_all_5_bet_types':market_ok,'lines':False,'scheduled_start':False},
+        'source_reliability':{'state':'AVAILABLE' if entry_ok and market_ok else 'PARTIAL','basis':'SOURCE_BOUND_HTTP_AND_STRUCTURAL_INTEGRITY'},
+        'cross_source_match':{'state':'UNKNOWN','reason':'SINGLE_SOURCE_ONLY'},
+        'schema_validity':schema_ok,
+        'timestamp_integrity':timestamp_ok,
+        'outlier_safety':{'state':'UNKNOWN','reason':'NO_B50_OUTLIER_MODEL'},
+        'coverage_score':None},
+      'data_gate':{'state':data_gate_state,'blockers':blockers,'policy':'NO_NEUTRAL_DEFAULTS_NO_FABRICATION'},
+      'handoff':{'consumer':'GPT_JOHNNY_ENGINE','machine_readable':True,'raw_html_included':False},
+      'fabricated_data':False}
+
+def live_gpt_race_input_b50(target_date):
+    started=time.time()
+    upstream=live_canonical_market_binding_b494(target_date)
+    if upstream.get('state') not in ('AVAILABLE','PARTIAL'):
+        return {'schema':'JFE-GPT-HANDOFF/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','acquired_at':now(),'upstream_state':upstream.get('state'),'upstream_recovery_queue':upstream.get('recovery_queue',[]),'race_input':None,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    ri=build_gpt_race_input_b50(upstream)
+    return {'schema':'JFE-GPT-HANDOFF/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if ri.get('state')=='READY_FOR_GPT' else 'PARTIAL','acquired_at':now(),'race_input':ri,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -1838,6 +1902,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  gri=re.fullmatch(r"/v1/gpt/race-input/(\d{4}-\d{2}-\d{2})",p)
+  if gri:
+   result=live_gpt_race_input_b50(gri.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   tcp=re.fullmatch(r"/v1/trifecta-coordinate-probe/(\d{4}-\d{2}-\d{2})",p)
   if tcp:
    result=live_trifecta_coordinate_probe_b4951(tcp.group(1)); return self.j(200 if result.get("state")!="ERROR" else 503,result)

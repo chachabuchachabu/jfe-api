@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.5.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.5.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -994,37 +994,77 @@ def _b494_canonicalize(rows,active,ordered,range_mode=False):
     return quotes,conflicts,rejected
 
 
+def _b495_car_from_class(value):
+    """Bind a car number only from an explicit nN CSS class token."""
+    for tok in (value or '').split():
+        m=re.fullmatch(r'n(\d+)',tok)
+        if m: return int(m.group(1))
+    return None
+
 def _b495_bind_trifecta_bt5(bt5_tables,active):
+    """Source-coordinate binding for KDreams bt5.
+
+    Evidence established by B49.5.1 live probe:
+      table heading th.nX = first place
+      row heading th.nY   = second place
+      column heading th.nZ = third place
+      intersecting td     = odds
+    No positional car-number inference is used; all three axes are class-bound.
+    """
     aset=set(active); quotes={}; conflicts=[]; rejected=[]; axes=[]
     for t in bt5_tables:
-        table_text=t.get('text') or ''
-        # Axis is the leading car number in the table caption/header text.
-        m=re.match(r'\s*(\d+)\b',table_text)
-        if not m or int(m.group(1)) not in aset:
-            rejected.append({"table_index":t.get('table_index'),"reason":"AXIS_NOT_BOUND"}); continue
-        axis=int(m.group(1)); axes.append(axis)
+        html=t.get('html') or ''
+        rows=list(re.finditer(r'<tr\b([^>]*)>(.*?)</tr>',html,re.I|re.S))
+        if len(rows)<4:
+            rejected.append({'table_index':t.get('table_index'),'reason':'BT5_ROW_STRUCTURE_SHORT'}); continue
+        # First-place axis: colspan heading carrying nN.
+        hm=re.search(r'<th\b([^>]*)\bcolspan\s*=\s*["\']8["\'][^>]*>',rows[0].group(2),re.I|re.S)
+        if not hm: hm=re.search(r'<th\b([^>]*)>',rows[0].group(2),re.I|re.S)
+        hattrs=_b4951_attrs(hm.group(1) if hm else '')
+        first=_b495_car_from_class(hattrs.get('class'))
+        if first not in aset:
+            rejected.append({'table_index':t.get('table_index'),'reason':'FIRST_AXIS_NOT_CLASS_BOUND'}); continue
+        axes.append(first)
+        # Third-place axes are explicit nN classes in row 1, excluding blank edge headers.
+        colcars=[]
+        for cm in re.finditer(r'<th\b([^>]*)>(.*?)</th>',rows[1].group(2),re.I|re.S):
+            c=_b495_car_from_class(_b4951_attrs(cm.group(1) or '').get('class'))
+            if c in aset and c!=first: colcars.append(c)
+        if len(colcars)!=len(active)-1 or len(set(colcars))!=len(colcars):
+            rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'THIRD_AXIS_COUNT_MISMATCH','third_axes':colcars}); continue
         row_hits=0
-        for rm in re.finditer(r'<tr\b[^>]*>(.*?)</tr>',t.get('html') or '',re.I|re.S):
-            rt=txt(rm.group(1))
-            vals=[float(x) for x in re.findall(r'(?<!\d)(\d{1,5}\.\d)(?!\d)',rt)]
-            if len(vals)!=len(active)-2: continue
-            ints=[int(x) for x in re.findall(r'(?<![\d.])(\d+)(?![\d.])',rt)]
-            second=next((x for x in ints if x in aset and x!=axis),None)
+        for rm in rows[3:]:
+            cells=list(re.finditer(r'<(td|th)\b([^>]*)>(.*?)</\1>',rm.group(2),re.I|re.S))
+            if len(cells)<3: continue
+            second=None
+            for cm in cells:
+                if cm.group(1).lower()=='th':
+                    c=_b495_car_from_class(_b4951_attrs(cm.group(2) or '').get('class'))
+                    if c in aset and c!=first: second=c; break
             if second is None:
-                rejected.append({"table_index":t.get('table_index'),"axis":axis,"reason":"SECOND_NOT_BOUND","row_text":rt[:120]}); continue
-            thirds=[x for x in active if x not in (axis,second)]
-            if len(thirds)!=len(vals):
-                rejected.append({"table_index":t.get('table_index'),"axis":axis,"second":second,"reason":"THIRD_COUNT_MISMATCH"}); continue
+                rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'SECOND_AXIS_NOT_CLASS_BOUND'}); continue
+            data=[cm for cm in cells if cm.group(1).lower()=='td']
+            if len(data)!=len(colcars):
+                rejected.append({'table_index':t.get('table_index'),'first':first,'second':second,'reason':'CELL_COLUMN_COUNT_MISMATCH','cells':len(data),'expected':len(colcars)}); continue
             row_hits+=1
-            for third,odds in zip(thirds,vals):
-                key=(axis,second,third)
+            for third,cm in zip(colcars,data):
+                attrs=_b4951_attrs(cm.group(2) or ''); celltxt=txt(cm.group(3))
+                if third==second:
+                    if 'empty' not in (attrs.get('class') or '').split() and celltxt:
+                        rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'DIAGONAL_NOT_EMPTY'})
+                    continue
+                if 'empty' in (attrs.get('class') or '').split():
+                    rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'UNEXPECTED_EMPTY_ODDS_CELL'}); continue
+                if not re.fullmatch(r'\d{1,5}\.\d',celltxt):
+                    rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'ODDS_VALUE_NOT_BOUND','text':celltxt[:40]}); continue
+                odds=float(celltxt); key=(first,second,third)
                 if key in quotes and quotes[key]!=odds:
-                    conflicts.append({"selection":list(key),"first_odds":quotes[key],"other_odds":odds})
+                    conflicts.append({'selection':list(key),'first_odds':quotes[key],'other_odds':odds})
                 else: quotes[key]=odds
         if row_hits!=len(active)-1:
-            rejected.append({"table_index":t.get('table_index'),"axis":axis,"reason":"SECOND_ROW_COUNT_MISMATCH","row_count":row_hits,"expected":len(active)-1})
-    out=[{"selection":list(k),"odds":v} for k,v in sorted(quotes.items())]
-    return out,{"axis_count":len(set(axes)),"axes":sorted(set(axes)),"conflicts":conflicts,"rejected_rows":rejected}
+            rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'SECOND_ROW_COUNT_MISMATCH','row_count':row_hits,'expected':len(active)-1})
+    out=[{'selection':list(k),'odds':v} for k,v in sorted(quotes.items())]
+    return out,{'binding_method':'BT5_CLASS_COORDINATE','axis_count':len(set(axes)),'axes':sorted(set(axes)),'conflicts':conflicts,'rejected_rows':rejected}
 
 def canonical_market_bind_b494(raw,active):
     tables=_b494_tables(raw); n=len(active); sections={}; evidence=[]
@@ -1053,10 +1093,11 @@ def canonical_market_bind_b494(raw,active):
             sections[bt]={"state":"PARTIAL","expected_unique_count":expected,"unique_odds_count":len(chosen[1]),"table_complete":False,"quotes":[],"reason":"CANONICAL_TABLE_DISAGREEMENT","candidate_table_count":len(matches)}
         else:
             sections[bt]={"state":"UNKNOWN","expected_unique_count":expected,"unique_odds_count":0,"table_complete":False,"quotes":[],"reason":"NO_COMPLETE_CANONICAL_TABLE"}
-    # Trifecta: B49.3 proved n source-axis bt5 tables, but ranking tables are only partial top/bottom lists.
-    # Do not fabricate the 210 ordered quotes until bt5 cell coordinates are source-bound.
+    # Trifecta: B49.5.1 live evidence established first/second/third axes from explicit nN classes.
     bt5=[t for t in tables if t.get('class') and 'odds_table' in t['class'].split() and 'bt5' in t['class'].split()]
-    sections['trifecta']={"state":"PARTIAL" if bt5 else "UNKNOWN","expected_unique_count":_b494_expected(n,'trifecta'),"unique_odds_count":0,"table_complete":False,"quotes":[],"bt5_axis_table_count":len(bt5),"reason":"BT5_CELL_COORDINATE_BINDING_PENDING" if bt5 else "BT5_TABLE_NOT_FOUND","source_value_9999_9_policy":"PRESERVE_UNMODIFIED"}
+    tq,tmeta=_b495_bind_trifecta_bt5(bt5,active) if bt5 else ([],{'binding_method':'BT5_CLASS_COORDINATE','axis_count':0,'axes':[],'conflicts':[],'rejected_rows':[{'reason':'BT5_TABLE_NOT_FOUND'}]})
+    te=_b494_expected(n,'trifecta'); tcomplete=(len(tq)==te and tmeta.get('axis_count')==n and not tmeta.get('conflicts') and not tmeta.get('rejected_rows'))
+    sections['trifecta']={'state':'AVAILABLE' if tcomplete else ('PARTIAL' if tq or bt5 else 'UNKNOWN'),'expected_unique_count':te,'unique_odds_count':len(tq),'table_complete':tcomplete,'quotes':tq,'bt5_axis_table_count':len(bt5),'binding_evidence':tmeta,'source_value_9999_9_policy':'PRESERVE_UNMODIFIED'}
     available=sum(v['state']=='AVAILABLE' for v in sections.values())
     return {"state":"AVAILABLE" if available==5 else ("PARTIAL" if available else "UNKNOWN"),"sections":sections,"available_section_count":available,"canonical_scope_selected":available>0,"bet_type_inference":False,"fabricated_data":False}
 
@@ -1086,11 +1127,12 @@ def live_canonical_market_binding_b494(target_date):
     return _b494_response(target_date,started,stages,result,recovery,snap['state'])
 
 def _b494_response(target_date,started,stages,result,recovery,state):
-    return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.2","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
+    return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.3","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
 
 
 
-# ===== DEV-B49.5.1 Trifecta BT5 Cell Coordinate Probe =====
+# ===== DEV-B49.5.2 Trifecta BT5 Coordinate Binding =====
+# B49.5.1 probe retained below as diagnostic evidence endpoint.
 def _b4951_attrs(tag):
     out={}
     for m in re.finditer(r'([:\w-]+)\s*=\s*["\']([^"\']*)["\']',tag,re.I|re.S):

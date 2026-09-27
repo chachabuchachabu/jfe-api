@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b52"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b52.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1945,79 +1945,96 @@ def live_je_integration_b51(target_date):
             'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 
-# ===== DEV-B52 Independent Cross-Source Validation =====
-def _b52_norm_text(v):
+# ===== DEV-B52.1 Multi-Source Adapter / Failover Cross-Source Validation =====
+def _b521_norm_text(v):
     import unicodedata
-    return re.sub(r'\\s+','',unicodedata.normalize('NFKC',H.unescape(str(v or ''))))
+    return re.sub(r'\s+','',unicodedata.normalize('NFKC',H.unescape(str(v or ''))))
 
-def _b52_decode(body,ctype=None):
-    for enc in ('utf-8','cp932','shift_jis','euc_jp'):
+def _b521_decode(body,ctype=None):
+    # Source adapters own decoding; no shared assumption that all providers use one charset.
+    hinted=''
+    m=re.search(r'charset=([\w-]+)',str(ctype or ''),re.I)
+    if m: hinted=m.group(1)
+    for enc in tuple(x for x in (hinted,'utf-8','cp932','shift_jis','euc_jp') if x):
         try:return body.decode(enc)
         except Exception:pass
     return body.decode('utf-8','replace')
 
-def _b52_fetch_oddspark(venue_code,target_date,race_no):
-    ds=target_date.replace('-','')
-    url=f'https://www.oddspark.com/keirin/Odds.do?joCode={venue_code}&kaisaiBi={ds}&raceNo={int(race_no)}'
-    q=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 JFE-B52/0.1','Accept-Encoding':'identity','Cache-Control':'no-cache'})
-    with urllib.request.urlopen(q,timeout=7) as x:
-        b=x.read(); return url,b,getattr(x,'status',200),x.headers.get('Content-Type')
+def _b521_http(url,source,timeout_s):
+    q=urllib.request.Request(url,headers={'User-Agent':f'Mozilla/5.0 JFE-B52.1-{source}/0.1','Accept-Encoding':'identity','Cache-Control':'no-cache'})
+    with urllib.request.urlopen(q,timeout=timeout_s) as x:
+        b=x.read()
+        return b,getattr(x,'status',200),x.headers.get('Content-Type')
 
-def _b52_car_name_evidence(raw_text,riders):
-    # Cross-source evidence is accepted only when every normalized rider name is present
-    # and an explicit car-number/name neighborhood can be proven. No fuzzy identity pass.
-    norm=_b52_norm_text(raw_text)
-    ev=[]
+def _b521_row_car_name_evidence(raw_text,riders):
+    # Generic row-level helper only. Provider adapters decide whether its DOM is suitable.
+    rows=re.findall(r'<tr\b[^>]*>(.*?)</tr>',raw_text,flags=re.S|re.I)
+    out=[]
     for r in riders:
-        car=int(r.get('car_no'))
-        name=_b52_norm_text(r.get('rider_name'))
-        pos=norm.find(name)
-        present=pos>=0
-        # OddsPark race tables render car axis adjacent to rider name. Search a bounded
-        # neighborhood, but do not accept the car number from an arbitrary page location.
-        lo=max(0,pos-160) if present else 0; hi=min(len(norm),pos+len(name)+80) if present else 0
-        near=norm[lo:hi] if present else ''
-        car_bound=present and re.search(r'(?<!\\d)'+re.escape(str(car))+r'(?!\\d)',near) is not None
-        ev.append({'car_no':car,'rider_name':r.get('rider_name'),'name_present':present,'car_name_neighborhood_match':bool(car_bound)})
+        car=int(r.get('car_no')); name=_b521_norm_text(r.get('rider_name')); matched=False
+        for row in rows:
+            rt=_b521_norm_text(txt(row))
+            if not name or name not in rt: continue
+            cells=[_b521_norm_text(txt(x)) for x in re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>',row,flags=re.S|re.I)]
+            # Require an explicit standalone car cell, not a number anywhere in the row.
+            if any(c==str(car) for c in cells[:5]): matched=True; break
+        out.append({'car_no':car,'rider_name':r.get('rider_name'),'row_name_present':any(name in _b521_norm_text(txt(x)) for x in rows) if name else False,'car_name_row_match':matched})
+    return out
+
+def _b521_adapter_oddspark(rid,riders,target_date):
+    vc=str(rid.get('venue_code') or ''); rn=int(rid.get('race_no')); ds=target_date.replace('-','')
+    url=f'https://www.oddspark.com/keirin/Odds.do?joCode={vc}&kaisaiBi={ds}&raceNo={rn}'
+    ev={'source':'ODDSPARK','adapter':'ODDSPARK_HTML_V1','state':'UNKNOWN','url':url,'http_status':None,'content_sha256':None,'checks':{},'rider_evidence':[]}
+    try:
+        body,status,ctype=_b521_http(url,'ODDSPARK',3.0); raw=_b521_decode(body,ctype)
+        rev=_b521_row_car_name_evidence(raw,riders)
+        identity=(f'joCode={vc}' in url and f'kaisaiBi={ds}' in url and f'raceNo={rn}' in url)
+        full=bool(riders) and all(x['car_name_row_match'] for x in rev)
+        ev.update({'http_status':status,'content_sha256':hashlib.sha256(body).hexdigest(),'byte_length':len(body),'checks':{'source_url_race_identity':identity,'expected_rider_count':len(riders),'verified_rider_count':sum(x['car_name_row_match'] for x in rev),'full_car_rider_binding':full},'rider_evidence':rev})
+        ev['state']='AVAILABLE' if status==200 and identity and full else 'PARTIAL'
+    except Exception as e:
+        ev['error_type']=type(e).__name__;ev['error']=str(e)[:240]
     return ev
 
-def apply_cross_source_b52(race_input,target_date):
-    ri=json.loads(json.dumps(race_input,ensure_ascii=False))
-    rid=ri.get('race_id') or {}; riders=ri.get('riders') or []
-    vc=str(rid.get('venue_code') or ''); rn=rid.get('race_no')
-    evidence={'source':'ODDSPARK','state':'UNKNOWN','url':None,'http_status':None,'content_sha256':None,'checks':{},'rider_evidence':[]}
+def _b521_adapter_netkeirin(rid,riders,target_date):
+    vc=str(rid.get('venue_code') or '').zfill(2); rn=int(rid.get('race_no')); ds=target_date.replace('-','')
+    race_id=f'{ds}{vc}{rn:02d}'
+    url=f'https://keirin.netkeiba.com/race/entry/?race_id={race_id}'
+    ev={'source':'NETKEIRIN','adapter':'NETKEIRIN_ENTRY_HTML_V1','state':'UNKNOWN','url':url,'http_status':None,'content_sha256':None,'checks':{},'rider_evidence':[]}
     try:
-        url,body,status,ctype=_b52_fetch_oddspark(vc,target_date,rn)
-        txt=_b52_decode(body,ctype); norm=_b52_norm_text(txt)
-        rev=_b52_car_name_evidence(txt,riders)
-        date_token=target_date.replace('-','')
-        url_identity=(f'joCode={vc}' in url and f'kaisaiBi={date_token}' in url and f'raceNo={int(rn)}' in url)
-        all_names=bool(riders) and all(x['name_present'] for x in rev)
-        all_car_bind=bool(riders) and all(x['car_name_neighborhood_match'] for x in rev)
-        evidence.update({'url':url,'http_status':status,'content_sha256':hashlib.sha256(body).hexdigest(),'byte_length':len(body),
-          'checks':{'source_url_race_identity':url_identity,'all_rider_names_present':all_names,'all_car_name_bindings_verified':all_car_bind,
-                    'expected_rider_count':len(riders),'verified_rider_count':sum(1 for x in rev if x['car_name_neighborhood_match'])},
-          'rider_evidence':rev})
-        evidence['state']='AVAILABLE' if status==200 and url_identity and all_names and all_car_bind else 'PARTIAL'
+        body,status,ctype=_b521_http(url,'NETKEIRIN',5.0); raw=_b521_decode(body,ctype)
+        rev=_b521_row_car_name_evidence(raw,riders)
+        identity=(f'race_id={race_id}' in url)
+        full=bool(riders) and all(x['car_name_row_match'] for x in rev)
+        ev.update({'http_status':status,'content_sha256':hashlib.sha256(body).hexdigest(),'byte_length':len(body),'checks':{'source_url_race_identity':identity,'race_id':race_id,'expected_rider_count':len(riders),'verified_rider_count':sum(x['car_name_row_match'] for x in rev),'full_car_rider_binding':full},'rider_evidence':rev})
+        ev['state']='AVAILABLE' if status==200 and identity and full else 'PARTIAL'
     except Exception as e:
-        evidence['error_type']=type(e).__name__; evidence['error']=str(e)[:240]
-    q=dict(ri.get('quality') or {})
-    if evidence['state']=='AVAILABLE':
-        q['cross_source_match']={'state':'AVAILABLE','basis':'INDEPENDENT_ODDSPARK_RACE_ID_AND_FULL_CAR_RIDER_BINDING','source':'ODDSPARK','verified_rider_count':len(riders)}
-    else:
-        q['cross_source_match']={'state':'UNKNOWN','reason':'INDEPENDENT_SOURCE_NOT_FULLY_VERIFIED','source':'ODDSPARK'}
-    ri['quality']=q
-    prov=dict(ri.get('provenance') or {}); prov['cross_source']=evidence; ri['provenance']=prov
-    return ri,evidence
+        ev['error_type']=type(e).__name__;ev['error']=str(e)[:240]
+    return ev
 
-def live_cross_source_b52(target_date):
+_B521_ADAPTERS=(('ODDSPARK',_b521_adapter_oddspark),('NETKEIRIN',_b521_adapter_netkeirin))
+
+def apply_cross_source_b521(race_input,target_date):
+    ri=json.loads(json.dumps(race_input,ensure_ascii=False)); rid=ri.get('race_id') or {}; riders=ri.get('riders') or []
+    attempts=[]; selected=None
+    for source,adapter in _B521_ADAPTERS:
+        ev=adapter(rid,riders,target_date); attempts.append(ev)
+        if ev.get('state')=='AVAILABLE': selected=ev; break
+    aggregate={'state':'AVAILABLE' if selected else 'UNKNOWN','policy':'FIRST_FULLY_VERIFIED_INDEPENDENT_SOURCE','selected_source':selected.get('source') if selected else None,'selected_evidence':selected,'attempts':attempts,'attempted_source_count':len(attempts)}
+    q=dict(ri.get('quality') or {})
+    if selected:
+        q['cross_source_match']={'state':'AVAILABLE','basis':'INDEPENDENT_SOURCE_RACE_ID_AND_FULL_CAR_RIDER_BINDING','source':selected['source'],'adapter':selected['adapter'],'verified_rider_count':len(riders)}
+    else:
+        q['cross_source_match']={'state':'UNKNOWN','reason':'NO_INDEPENDENT_SOURCE_FULLY_VERIFIED','attempted_sources':[x['source'] for x in attempts]}
+    ri['quality']=q
+    prov=dict(ri.get('provenance') or {});prov['cross_source']=aggregate;ri['provenance']=prov
+    return ri,aggregate
+
+def live_cross_source_b521(target_date):
     started=time.time(); b50=live_gpt_race_input_b50(target_date); ri=b50.get('race_input')
-    if not ri:return {'schema':'JFE-CROSS-SOURCE-VALIDATION/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
-    ri2,ev=apply_cross_source_b52(ri,target_date)
-    integ=build_je_integration_b51(ri2)
-    return {'schema':'JFE-CROSS-SOURCE-VALIDATION/0.1','service':'JFE','version':VERSION,'target_date':target_date,
-      'state':'AVAILABLE' if ev.get('state')=='AVAILABLE' else 'PARTIAL','cross_source_evidence':ev,'integration':integ,
-      'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    if not ri:return {'schema':'JFE-CROSS-SOURCE-VALIDATION/0.2','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    ri2,ev=apply_cross_source_b521(ri,target_date); integ=build_je_integration_b51(ri2)
+    return {'schema':'JFE-CROSS-SOURCE-VALIDATION/0.2','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if ev.get('state')=='AVAILABLE' else 'PARTIAL','cross_source_evidence':ev,'integration':integ,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
@@ -2030,7 +2047,7 @@ class S(BaseHTTPRequestHandler):
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
   csv=re.fullmatch(r"/v1/cross-source-validation/(\d{4}-\d{2}-\d{2})",p)
   if csv:
-   result=live_cross_source_b52(csv.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
+   result=live_cross_source_b521(csv.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   jei=re.fullmatch(r"/v1/johnny-engine/integration/(\d{4}-\d{2}-\d{2})",p)
   if jei:
    result=live_je_integration_b51(jei.group(1)); return self.j(200 if result.get("state")=="AVAILABLE" else 503,result)

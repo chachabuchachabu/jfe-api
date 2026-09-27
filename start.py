@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b49.5"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b49.5.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1088,6 +1088,54 @@ def live_canonical_market_binding_b494(target_date):
 def _b494_response(target_date,started,stages,result,recovery,state):
     return {"schema":"JFE-LIVE-CANONICAL-MARKET-BINDING/0.2","service":"JFE","version":VERSION,"target_date":target_date,"state":state,"acquired_at":now(),"stage_diagnostics":stages,"result":result,"recovery_queue":recovery,"request_elapsed_ms":round((time.time()-started)*1000,1),"source_value_9999_9_policy":"PRESERVE_UNMODIFIED","bet_type_inference":False,"always_respond_policy":True,"fabricated_data":False}
 
+
+
+# ===== DEV-B49.5.1 Trifecta BT5 Cell Coordinate Probe =====
+def _b4951_attrs(tag):
+    out={}
+    for m in re.finditer(r'([:\w-]+)\s*=\s*["\']([^"\']*)["\']',tag,re.I|re.S):
+        out[m.group(1).lower()]=m.group(2)
+    return out
+
+def _b4951_bt5_cell_probe(raw,active):
+    tables=_b494_tables(raw); bt5=[t for t in tables if t.get('class') and 'odds_table' in t['class'].split() and 'bt5' in t['class'].split()]
+    out=[]
+    for t in bt5:
+        rows=[]
+        for ri,rm in enumerate(re.finditer(r'<tr\b([^>]*)>(.*?)</tr>',t.get('html') or '',re.I|re.S)):
+            cells=[]
+            for ci,cm in enumerate(re.finditer(r'<(td|th)\b([^>]*)>(.*?)</\1>',rm.group(2),re.I|re.S)):
+                attrs=_b4951_attrs(cm.group(2) or '')
+                cells.append({'cell_index':ci,'tag':cm.group(1).lower(),'class':attrs.get('class'),'rowspan':attrs.get('rowspan'),'colspan':attrs.get('colspan'),'data_attrs':{k:v for k,v in attrs.items() if k.startswith('data-')},'text':txt(cm.group(3))[:160]})
+            if cells: rows.append({'row_index':ri,'class':_b4951_attrs(rm.group(1) or '').get('class'),'cells':cells})
+        axis=None; m=re.match(r'\s*(\d+)\b',t.get('text') or '')
+        if m and int(m.group(1)) in set(active): axis=int(m.group(1))
+        out.append({'table_index':t.get('table_index'),'class':t.get('class'),'axis_text_candidate':axis,'row_count':len(rows),'rows':rows})
+    return {'bt5_table_count':len(bt5),'expected_axis_table_count':len(active),'active_car_numbers':active,'tables':out,'promotion':'NONE_DIAGNOSTIC_ONLY','source_value_9999_9_policy':'PRESERVE_UNMODIFIED'}
+
+def live_trifecta_coordinate_probe_b4951(target_date):
+    started=time.time(); stages={k:{'state':'NOT_STARTED'} for k in ('race_verification','entry_fetch','entry_parse','entry_integrity','odds_fetch','coordinate_probe')}; result={}; recovery=[]
+    rv=_bounded_stage('RACE_VERIFICATION',8,lambda:live_race_verification(target_date)); stages['race_verification']={k:v for k,v in rv.items() if k!='value'}
+    if rv['state']!='COMPLETED': return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'RACE_VERIFICATION_'+rv['state']}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    chosen,diag=select_source_bound_race_b491(rv['value']); result['source_binding_diagnostics']=diag
+    if not chosen: return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'NO_SOURCE_BOUND_RACE'}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url); result['selected_race']={'kaisai_date_id':venue.get('kaisai_date_id'),'venue_code':venue.get('venue_code'),'race_no':rn,'source_racedetail_url':url,'odds_url':odds_url}
+    def fetch1(u,ua):
+        q=urllib.request.Request(u,headers={'User-Agent':ua,'Accept-Encoding':'identity','Cache-Control':'no-cache'})
+        with urllib.request.urlopen(q,timeout=5) as x:return x.read(),getattr(x,'status',200),x.headers.get('Content-Type')
+    ef=_bounded_stage('ENTRY_FETCH',6,lambda:fetch1(url,'JFE-B49.5.1-Entry/0.1')); stages['entry_fetch']={k:v for k,v in ef.items() if k!='value'}
+    if ef['state']!='COMPLETED': return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'ENTRY_FETCH_'+ef['state']}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    eb,_,_=ef['value']; t=time.time(); pe=parse_primary_racecard_entries(eb.decode('utf-8','replace')); stages['entry_parse']={'state':'COMPLETED','elapsed_ms':round((time.time()-t)*1000,1)}
+    t=time.time(); integ=validate_entry_integrity(pe); stages['entry_integrity']={'state':'COMPLETED','elapsed_ms':round((time.time()-t)*1000,1)}; active=integ.get('active_car_numbers') or []; result['entry']={'state':integ.get('state'),'entry_count':integ.get('entry_count'),'active_car_numbers':active}
+    if integ.get('state')!='AVAILABLE': return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'ENTRY_INTEGRITY_NOT_AVAILABLE'}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    of=_bounded_stage('ODDS_FETCH',6,lambda:fetch1(odds_url,'JFE-B49.5.1-Coordinate/0.1')); stages['odds_fetch']={k:v for k,v in of.items() if k!='value'}
+    if of['state']!='COMPLETED': return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'ODDS_FETCH_'+of['state']}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    ob,ost,oct=of['value']; raw=ob.decode('utf-8','replace'); result['odds_source']={'http_status':ost,'content_type':oct,'byte_length':len(ob),'content_sha256':hashlib.sha256(ob).hexdigest()}
+    cp=_bounded_stage('COORDINATE_PROBE',4,lambda:_b4951_bt5_cell_probe(raw,active)); stages['coordinate_probe']={k:v for k,v in cp.items() if k!='value'}
+    if cp['state']!='COMPLETED': return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','stage_diagnostics':stages,'result':result,'recovery_queue':[{'reason':'COORDINATE_PROBE_'+cp['state']}],'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    result['coordinate_probe']=cp['value']
+    return {'schema':'JFE-TRIFECTA-BT5-COORDINATE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE','acquired_at':now(),'stage_diagnostics':stages,'result':result,'recovery_queue':recovery,'request_elapsed_ms':round((time.time()-started)*1000,1),'parser_promotion':'NONE_DIAGNOSTIC_ONLY','source_value_9999_9_policy':'PRESERVE_UNMODIFIED','fabricated_data':False}
+
 # ===== DEV-B48 Market/Odds DOM Probe =====
 def _odds_url_from_racedetail(url):
     """Use the already source-bound racedetail URL; only switch the official pageType view."""
@@ -1748,6 +1796,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  tcp=re.fullmatch(r"/v1/trifecta-coordinate-probe/(\d{4}-\d{2}-\d{2})",p)
+  if tcp:
+   result=live_trifecta_coordinate_probe_b4951(tcp.group(1)); return self.j(200 if result.get("state")!="ERROR" else 503,result)
   cmb=re.fullmatch(r"/v1/(?:canonical-market-binding|trifecta-market-binding)/(\d{4}-\d{2}-\d{2})",p)
   if cmb:
    result=live_canonical_market_binding_b494(cmb.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

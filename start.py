@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b54"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b55"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2156,6 +2156,63 @@ def live_johnny_execution_b54(target_date):
       'outlier_safety_evidence':outlier,'integration':integ,'execution_preflight':pre,'execution':execution,
       'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+# ===== DEV-B55 Evidence-Native Johnny Engine Contract =====
+# Purpose: remove JE 1.0 proto's fabricated rider/line defaults from the executable contract.
+# This stage validates/adapts evidence only. Predictive execution remains gated until the
+# evidence-native model is chronologically calibrated/validated.
+def _b55_evidence_native_contract(integration):
+    integ=integration or {}; blockers=[]; riders=[]
+    if (integ.get('data_gate') or {}).get('state')!='PASS': blockers.append('STRICT_DATA_GATE_NOT_PASS')
+    for r in integ.get('riders') or []:
+        score=r.get('race_score')
+        if not isinstance(score,(int,float)) or isinstance(score,bool):
+            blockers.append('RACE_SCORE_EVIDENCE_MISSING'); continue
+        riders.append({'car_no':r.get('car_no'),'rider_name':r.get('rider_name'),'race_score':float(score),
+          'source_field':'race_score','fabricated_features':False})
+    if not riders: blockers.append('NO_EVIDENCE_BACKED_RIDERS')
+    lines=integ.get('lines') or {}; rt=integ.get('race_type')
+    if rt=='GIRLS_KEIRIN':
+        if lines.get('state')!='NOT_APPLICABLE': blockers.append('GIRLS_LINE_APPLICABILITY_CONFLICT')
+        line_model={'state':'NOT_APPLICABLE','mode':'INDIVIDUAL_RACE','synthetic_lines_created':False}
+    else:
+        if lines.get('state')!='AVAILABLE': blockers.append('STANDARD_RACE_LINES_UNAVAILABLE')
+        line_model={'state':lines.get('state'),'mode':'VERIFIED_LINES_REQUIRED','formations':lines.get('formations') or []}
+    sections=((integ.get('market') or {}).get('sections') or {})
+    supported={}
+    mapn={'quinella':'2quinella','exacta':'2exacta','trio':'trio','trifecta':'trifecta'}
+    for src,dst in mapn.items():
+        sec=sections.get(src) or {}
+        if sec.get('state')!='AVAILABLE': blockers.append('MARKET_SECTION_UNAVAILABLE:'+src); continue
+        qs=[]
+        for q in sec.get('quotes') or []:
+            val=q.get('odds')
+            if not isinstance(val,(int,float)) or isinstance(val,bool): continue
+            qs.append({'bet_type':dst,'selection':q.get('selection'),'odds':float(val),'source_value_9999_9':float(val)==9999.9})
+        if len(qs)!=sec.get('expected_unique_count'): blockers.append('MARKET_COUNT_MISMATCH:'+src)
+        supported[src]={'je_bet_type':dst,'quote_count':len(qs),'quotes':qs}
+    wide=sections.get('wide') or {}
+    audit={'state':wide.get('state'),'policy':'EXCLUDED_RANGE_ODDS_UNSUPPORTED_BY_CURRENT_JE_PROBABILITY_CONTRACT',
+      'quote_count':len(wide.get('quotes') or []),'silently_dropped':False}
+    # B55 intentionally does not invent numeric quality scores required by JE 1.0 proto.
+    return {'schema':'JFE-JE-EVIDENCE-NATIVE-CONTRACT/0.1','engine_contract':'JE-STRICT-2/0.1',
+      'state':'READY_FOR_MODEL_VALIDATION' if not blockers else 'BLOCKED','blockers':list(dict.fromkeys(blockers)),
+      'race_id':integ.get('race_id'),'race_type':rt,'riders':riders,'line_model':line_model,
+      'market':supported,'wide_audit':audit,
+      'quality_evidence':integ.get('quality'),'legacy_proto_numeric_quality_defaults_used':False,
+      'legacy_neutral_default_adapter_used':False,'fabricated_data':False}
+
+def live_johnny_contract_b55(target_date):
+    started=time.time(); b50=live_gpt_race_input_b50(target_date); ri=b50.get('race_input')
+    if not ri:return {'schema':'JFE-JOHNNY-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','fabricated_data':False}
+    ri2,cross=apply_cross_source_b521(ri,target_date); ri3,outlier=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3)
+    contract=_b55_evidence_native_contract(integ)
+    execution={'state':'NOT_EXECUTED','reason':'PREDICTIVE_MODEL_CALIBRATION_AND_OOS_VALIDATION_REQUIRED'}
+    return {'schema':'JFE-JOHNNY-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,
+      'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
+      'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),
+      'strict_contract':contract,'execution':execution,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2165,6 +2222,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  b55=re.fullmatch(r"/v1/johnny-engine/strict-contract/(\d{4}-\d{2}-\d{2})",p)
+  if b55:
+   result=live_johnny_contract_b55(b55.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   jex=re.fullmatch(r"/v1/johnny-engine/execute/(\d{4}-\d{2}-\d{2})",p)
   if jex:
    result=live_johnny_execution_b54(jex.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

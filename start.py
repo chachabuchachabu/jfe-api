@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b53"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b54"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2103,6 +2103,59 @@ def live_outlier_safety_b53(target_date):
     ri2,cross=apply_cross_source_b521(ri,target_date); ri3,evidence=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3)
     return {'schema':'JFE-OUTLIER-SAFETY-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if evidence.get('state')=='AVAILABLE' else 'PARTIAL','cross_source_evidence':cross,'outlier_safety_evidence':evidence,'integration':integ,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+# ===== DEV-B54 Strict Johnny Engine Execution Preflight =====
+# B54 deliberately does not synthesize JE rider features or line cohesion.
+# It may execute only when the actual JE contract can be populated entirely from evidence.
+def _b54_execution_preflight(integration):
+    integ=integration or {}; blockers=[]; evidence={}
+    if (integ.get('data_gate') or {}).get('state')!='PASS':
+        blockers.append('STRICT_DATA_GATE_NOT_PASS')
+    riders=integ.get('riders') or []
+    required=('rating','form','tactical','venue_fit','distance_fit','opponent_context')
+    rider_missing=[]
+    for r in riders:
+        miss=[k for k in required if not isinstance(r.get(k),(int,float)) or isinstance(r.get(k),bool)]
+        if miss:rider_missing.append({'car_no':r.get('car_no'),'missing':miss})
+    if rider_missing:blockers.append('JE_RIDER_FEATURE_EVIDENCE_MISSING')
+    evidence['rider_feature_contract']={'required_fields':list(required),'missing_by_car':rider_missing,
+      'neutral_defaults_forbidden':True}
+    lines=integ.get('lines') or {}
+    if integ.get('race_type')=='GIRLS_KEIRIN' and lines.get('state')=='NOT_APPLICABLE':
+        # JE 1.0 proto's scenario model iterates race.lines and assumes at least one line.
+        # Creating singleton lines/cohesion would fabricate evidence, so fail closed.
+        blockers.append('JE_PROTO_GIRLS_LINE_MODEL_INCOMPATIBLE')
+        evidence['line_contract']={'jfe_state':'NOT_APPLICABLE','je_proto_requires_line_objects':True,
+          'synthetic_singleton_lines_forbidden':True}
+    elif lines.get('state')!='AVAILABLE':
+        blockers.append('JE_LINE_FEATURE_EVIDENCE_MISSING')
+    else:
+        formations=lines.get('formations') or []
+        bad=[i for i,x in enumerate(formations) if not isinstance(x,dict) or not x.get('members') or not isinstance(x.get('cohesion'),(int,float))]
+        if bad:blockers.append('JE_LINE_FEATURE_EVIDENCE_MISSING')
+        evidence['line_contract']={'jfe_state':lines.get('state'),'invalid_formation_indexes':bad,'cohesion_evidence_required':True}
+    # Market adapter support: proto has no wide probability map. Do not silently relabel/drop without audit.
+    sections=((integ.get('market') or {}).get('sections') or {})
+    evidence['market_contract']={'available_sections':[k for k,v in sections.items() if (v or {}).get('state')=='AVAILABLE'],
+      'je_proto_supported':['exacta','quinella','trio','trifecta'],'wide_policy':'EXCLUDE_WITH_EXPLICIT_AUDIT_IF_EXECUTED'}
+    return {'schema':'JFE-JE-EXECUTION-PREFLIGHT/0.1','state':'READY' if not blockers else 'BLOCKED',
+      'blockers':blockers,'evidence':evidence,'legacy_neutral_default_adapter_used':False,'fabricated_data':False}
+
+def live_johnny_execution_b54(target_date):
+    started=time.time(); b50=live_gpt_race_input_b50(target_date); ri=b50.get('race_input')
+    if not ri:
+        return {'schema':'JFE-JOHNNY-EXECUTION-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','execution':{'state':'NOT_EXECUTED','reason':'NO_RACE_INPUT'},'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    ri2,cross=apply_cross_source_b521(ri,target_date); ri3,outlier=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3)
+    pre=_b54_execution_preflight(integ)
+    execution={'state':'NOT_EXECUTED','reason':'EXECUTION_PREFLIGHT_BLOCKED','engine_version':None,'result':None}
+    # No call to je_packet_to_race_input: that legacy path contains neutral defaults.
+    if pre['state']=='READY':
+        execution={'state':'READY_NOT_EXECUTED','reason':'STRICT_ADAPTER_IMPLEMENTATION_REQUIRED','engine_version':'JE 1.0.0-proto','result':None}
+    return {'schema':'JFE-JOHNNY-EXECUTION-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,
+      'state':'AVAILABLE' if integ.get('data_gate',{}).get('state')=='PASS' else 'PARTIAL','cross_source_evidence':cross,
+      'outlier_safety_evidence':outlier,'integration':integ,'execution_preflight':pre,'execution':execution,
+      'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2112,6 +2165,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  jex=re.fullmatch(r"/v1/johnny-engine/execute/(\d{4}-\d{2}-\d{2})",p)
+  if jex:
+   result=live_johnny_execution_b54(jex.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   osa=re.fullmatch(r"/v1/outlier-safety/(\d{4}-\d{2}-\d{2})",p)
   if osa:
    result=live_outlier_safety_b53(osa.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

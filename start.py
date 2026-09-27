@@ -2,7 +2,7 @@ import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b52.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b53"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2036,6 +2036,73 @@ def live_cross_source_b521(target_date):
     ri2,ev=apply_cross_source_b521(ri,target_date); integ=build_je_integration_b51(ri2)
     return {'schema':'JFE-CROSS-SOURCE-VALIDATION/0.2','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if ev.get('state')=='AVAILABLE' else 'PARTIAL','cross_source_evidence':ev,'integration':integ,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+# ===== DEV-B53 Evidence-backed Structural Outlier Safety =====
+def _b53_expected_count(kind,n):
+    if kind in ('wide','quinella'): return n*(n-1)//2
+    if kind=='exacta': return n*(n-1)
+    if kind=='trio': return n*(n-1)*(n-2)//6
+    if kind=='trifecta': return n*(n-1)*(n-2)
+    return None
+
+def _b53_validate_market(race_input):
+    ri=race_input or {}; market=ri.get('market') or {}; riders=ri.get('riders') or []
+    active=sorted({int(r.get('car_no')) for r in riders if r.get('car_no') is not None})
+    aset=set(active); n=len(active); issues=[]; checks={}; section_reports={}
+    specs={'wide':(2,False),'quinella':(2,False),'exacta':(2,True),'trio':(3,False),'trifecta':(3,True)}
+    for kind,(legs,ordered) in specs.items():
+        sec=(market.get('sections') or {}).get(kind) or {}; quotes=sec.get('quotes') or []
+        expected=_b53_expected_count(kind,n); seen={}; sec_issues=[]; source_9999=0
+        for idx,q in enumerate(quotes):
+            sel=q.get('selection') or []
+            try: sel=[int(x) for x in sel]
+            except Exception: sec_issues.append({'type':'SELECTION_NON_INTEGER','index':idx}); continue
+            if len(sel)!=legs: sec_issues.append({'type':'LEG_COUNT_MISMATCH','index':idx,'selection':sel}); continue
+            if len(set(sel))!=legs: sec_issues.append({'type':'REPEATED_CAR','index':idx,'selection':sel})
+            bad=[x for x in sel if x not in aset]
+            if bad: sec_issues.append({'type':'CAR_OUTSIDE_ACTIVE_SET','index':idx,'selection':sel,'invalid_cars':bad})
+            key=tuple(sel if ordered else sorted(sel))
+            if kind=='wide':
+                lo=q.get('odds_min'); hi=q.get('odds_max')
+                valid=isinstance(lo,(int,float)) and not isinstance(lo,bool) and isinstance(hi,(int,float)) and not isinstance(hi,bool) and lo>0 and hi>0
+                if not valid: sec_issues.append({'type':'INVALID_ODDS','index':idx,'selection':sel})
+                elif lo>hi: sec_issues.append({'type':'WIDE_RANGE_REVERSED','index':idx,'selection':sel,'odds_min':lo,'odds_max':hi})
+                if lo==9999.9 or hi==9999.9: source_9999+=1
+                value=(lo,hi)
+            else:
+                val=q.get('odds'); valid=isinstance(val,(int,float)) and not isinstance(val,bool) and val>0
+                if not valid: sec_issues.append({'type':'INVALID_ODDS','index':idx,'selection':sel})
+                if val==9999.9: source_9999+=1
+                value=val
+            if key in seen and seen[key]!=value: sec_issues.append({'type':'CONFLICTING_DUPLICATE','selection':sel,'first':seen[key],'second':value})
+            elif key in seen: sec_issues.append({'type':'DUPLICATE_SELECTION','selection':sel})
+            else: seen[key]=value
+        if sec.get('state')!='AVAILABLE': sec_issues.append({'type':'SECTION_NOT_AVAILABLE','state':sec.get('state')})
+        if sec.get('table_complete') is not True: sec_issues.append({'type':'TABLE_NOT_COMPLETE'})
+        if len(seen)!=expected: sec_issues.append({'type':'THEORETICAL_COUNT_MISMATCH','expected':expected,'actual':len(seen)})
+        if sec.get('expected_unique_count')!=expected: sec_issues.append({'type':'DECLARED_EXPECTED_COUNT_MISMATCH','expected':expected,'declared':sec.get('expected_unique_count')})
+        if sec.get('unique_odds_count')!=len(seen): sec_issues.append({'type':'DECLARED_UNIQUE_COUNT_MISMATCH','actual':len(seen),'declared':sec.get('unique_odds_count')})
+        section_reports[kind]={'state':'AVAILABLE' if not sec_issues else 'PARTIAL','expected_count':expected,'validated_unique_count':len(seen),'source_value_9999_9_count':source_9999,'source_value_9999_9_policy':'ALLOWED_SOURCE_VALUE_NOT_OUTLIER','issues':sec_issues}
+        issues.extend([{'section':kind,**x} for x in sec_issues])
+    checks['active_car_numbers']={'state':'AVAILABLE' if len(active)==len(riders) and len(active)==len(set(active)) and all(x>0 for x in active) else 'PARTIAL','cars':active,'rider_count':len(riders)}
+    if checks['active_car_numbers']['state']!='AVAILABLE': issues.append({'section':'entry','type':'ACTIVE_CAR_SET_INVALID'})
+    checks['market_state_available']=market.get('state')=='AVAILABLE'
+    if not checks['market_state_available']: issues.append({'section':'market','type':'MARKET_NOT_AVAILABLE'})
+    return {'schema':'JFE-OUTLIER-SAFETY/0.1','state':'AVAILABLE' if not issues else 'PARTIAL','policy':'STRUCTURAL_SEMANTIC_VALIDATION_NO_STATISTICAL_ODDS_GUESSING','active_car_numbers':active,'sections':section_reports,'checks':checks,'issue_count':len(issues),'issues':issues,'source_value_9999_9_policy':'PRESERVE_AND_ALLOW_AS_SOURCE_VALUE','fabricated_data':False}
+
+def apply_outlier_safety_b53(race_input):
+    ri=json.loads(json.dumps(race_input,ensure_ascii=False)); evidence=_b53_validate_market(ri)
+    q=dict(ri.get('quality') or {})
+    q['outlier_safety']={'state':'AVAILABLE','basis':'B53_STRUCTURAL_SEMANTIC_VALIDATION','issue_count':0} if evidence.get('state')=='AVAILABLE' else {'state':'PARTIAL','reason':'B53_STRUCTURAL_SEMANTIC_ISSUES','issue_count':evidence.get('issue_count')}
+    ri['quality']=q; prov=dict(ri.get('provenance') or {});prov['outlier_safety']=evidence;ri['provenance']=prov
+    return ri,evidence
+
+def live_outlier_safety_b53(target_date):
+    started=time.time(); b50=live_gpt_race_input_b50(target_date); ri=b50.get('race_input')
+    if not ri:return {'schema':'JFE-OUTLIER-SAFETY-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    ri2,cross=apply_cross_source_b521(ri,target_date); ri3,evidence=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3)
+    return {'schema':'JFE-OUTLIER-SAFETY-LIVE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'AVAILABLE' if evidence.get('state')=='AVAILABLE' else 'PARTIAL','cross_source_evidence':cross,'outlier_safety_evidence':evidence,'integration':integ,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2045,6 +2112,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  osa=re.fullmatch(r"/v1/outlier-safety/(\d{4}-\d{2}-\d{2})",p)
+  if osa:
+   result=live_outlier_safety_b53(osa.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   csv=re.fullmatch(r"/v1/cross-source-validation/(\d{4}-\d{2}-\d{2})",p)
   if csv:
    result=live_cross_source_b521(csv.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

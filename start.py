@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2216,9 +2216,9 @@ def live_johnny_contract_b55(target_date):
       'strict_contract':contract,'execution':execution,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 
-# ===== DEV-B56 Request-Time / Explicit Target Resolver =====
-# Resolves target identity before acquisition. NOW never claims an unstarted race unless
-# scheduled-start evidence is bound; explicit venue/race selection is source-link bound.
+# ===== DEV-B56.1 Request-Time / Explicit Target Resolver + Scheduled Start Binding =====
+# Target identity is source-link bound. Scheduled start is extracted only from that race's
+# own KDreams racedetail page; NOW filtering never guesses a start time.
 _B56_VENUES={
  '11':'函館','12':'青森','13':'いわき平','21':'弥彦','22':'前橋','23':'取手','24':'宇都宮','25':'大宮','26':'西武園','27':'京王閣','28':'立川','31':'松戸','32':'千葉','34':'川崎','35':'平塚','36':'小田原','37':'伊東温泉','38':'静岡','42':'名古屋','43':'岐阜','44':'大垣','45':'豊橋','46':'富山','47':'松阪','48':'四日市','51':'福井','53':'奈良','54':'向日町','55':'和歌山','56':'岸和田','61':'玉野','62':'広島','63':'防府','71':'高松','73':'小松島','74':'高知','75':'松山','81':'小倉','83':'久留米','84':'武雄','85':'佐世保','86':'別府','87':'熊本'}
 _B56_ALIAS={re.sub(r'[^0-9A-Za-z一-龯ぁ-んァ-ヶー]','',v):k for k,v in _B56_VENUES.items()}
@@ -2243,8 +2243,47 @@ def _b56_identity_rows(rv):
             if not urls:continue
             rows.append({'kaisai_date_id':venue.get('kaisai_date_id'),'venue_code':str(venue.get('venue_code') or '').zfill(2),
               'venue_name':_B56_VENUES.get(str(venue.get('venue_code') or '').zfill(2)),'race_no':int(rn),'source_racedetail_url':urls[0],
-              'identity_state':'VERIFIED','scheduled_start':{'state':'UNKNOWN','value':None,'reason':'START_TIME_NOT_BOUND_IN_B56'}})
+              'identity_state':'VERIFIED','scheduled_start':{'state':'UNKNOWN','value':None,'reason':'START_TIME_NOT_YET_BOUND'}})
     return rows
+
+def _b561_bind_start(row,target_date):
+    out=dict(row); url=str(row.get('source_racedetail_url') or '')
+    # URL identity must itself contain venue + YYYYMMDD + race number before time evidence is trusted.
+    token=re.search(r'/racedetail/(\d{2})(\d{8})(\d{4})(\d{2})/',url)
+    if not token:
+        out['scheduled_start']={'state':'ERROR','value':None,'reason':'SOURCE_URL_IDENTITY_UNPARSEABLE'}; return out
+    url_venue,url_date,url_dayseq,url_race=token.groups()
+    expected_date=target_date.replace('-','')
+    if url_venue!=str(row.get('venue_code')).zfill(2) or url_date!=expected_date or int(url_race)!=int(row.get('race_no')):
+        out['scheduled_start']={'state':'ERROR','value':None,'reason':'RACE_DATE_IDENTITY_MISMATCH'}; return out
+    try:
+        raw,lat,tr=fetch(url,0); plain=txt(raw)
+        # KDreams pages expose 発走 HH:MM; bind only explicit source text.
+        m=re.search(r'発走\s*(\d{1,2}):(\d{2})',plain)
+        if not m:
+            out['scheduled_start']={'state':'UNKNOWN','value':None,'reason':'EXPLICIT_START_TIME_NOT_FOUND','source_url':url,'transport':tr,'latency_ms':lat}; return out
+        hh,mm=int(m.group(1)),int(m.group(2))
+        if not (0<=hh<=23 and 0<=mm<=59):
+            out['scheduled_start']={'state':'ERROR','value':None,'reason':'INVALID_SOURCE_START_TIME','source_url':url}; return out
+        iso=f'{target_date}T{hh:02d}:{mm:02d}:00+09:00'
+        out['scheduled_start']={'state':'AVAILABLE','value':iso,'source_value':f'{hh:02d}:{mm:02d}','source_url':url,'source':'KDREAMS_RACEDETAIL','transport':tr,'latency_ms':lat}
+        return out
+    except Exception as e:
+        out['scheduled_start']={'state':'ERROR','value':None,'reason':'START_TIME_FETCH_ERROR','error_type':type(e).__name__,'error':str(e)}; return out
+
+def _b561_bind_many(rows,target_date):
+    if not rows:return []
+    # Bounded parallelism keeps NOW useful without serially multiplying source latency.
+    from concurrent.futures import ThreadPoolExecutor,as_completed
+    result=[None]*len(rows)
+    with ThreadPoolExecutor(max_workers=min(8,len(rows))) as ex:
+        fut={ex.submit(_b561_bind_start,r,target_date):i for i,r in enumerate(rows)}
+        for f in as_completed(fut):
+            i=fut[f]
+            try: result[i]=f.result()
+            except Exception as e:
+                r=dict(rows[i]);r['scheduled_start']={'state':'ERROR','value':None,'reason':'START_BIND_WORKER_ERROR','error_type':type(e).__name__};result[i]=r
+    return result
 
 def select_source_bound_race_b56(rv,selector):
     rows=_b56_identity_rows(rv); vc=_b56_norm_venue((selector or {}).get('venue')); rn=(selector or {}).get('race_no')
@@ -2258,12 +2297,13 @@ def select_source_bound_race_b56(rv,selector):
     return (venue,r['race_no'],r['source_racedetail_url']),diag
 
 def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
-    started=time.time(); jst=_b56_jst_now(); mode=str(mode or 'NOW').upper()
-    td=target_date or jst.date().isoformat()
+    started=time.time(); jst=_b56_jst_now(); mode=str(mode or 'NOW').upper(); td=target_date or jst.date().isoformat()
     rv=live_race_verification(td); rows=_b56_identity_rows(rv); vc=_b56_norm_venue(venue)
     filtered=[r for r in rows if (vc is None or r['venue_code']==vc) and (race_no is None or r['race_no']==int(race_no))]
-    blockers=[]; selected=None
+    blockers=[]; selected=None; excluded_started=[]; unresolved=[]
     if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
+    if mode in ('NOW','VENUE','RACE') and filtered:
+        filtered=_b561_bind_many(filtered,td)
     if mode=='RACE':
         if vc is None:blockers.append('VENUE_REQUIRED')
         if race_no is None:blockers.append('RACE_NO_REQUIRED')
@@ -2272,23 +2312,37 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
     elif mode=='VENUE':
         if vc is None:blockers.append('VENUE_REQUIRED')
     elif mode=='NOW':
-        # Request time/date is authoritative, but start-time evidence is not yet bound.
-        blockers.append('SCHEDULED_START_EVIDENCE_REQUIRED_FOR_UNSTARTED_FILTER')
+        future=[]
+        for r in filtered:
+            ss=r.get('scheduled_start') or {}
+            if ss.get('state')!='AVAILABLE': unresolved.append(r); continue
+            dt=datetime.fromisoformat(ss['value'])
+            if dt>jst: future.append(r)
+            else: excluded_started.append(r)
+        filtered=future
+        if unresolved:blockers.append('SOME_SCHEDULED_STARTS_UNRESOLVED')
+        if not filtered and not unresolved:blockers.append('NO_UNSTARTED_RACES_AT_REQUEST_TIME')
     else:blockers.append('UNSUPPORTED_MODE')
-    return {'schema':'JFE-TARGET-RESOLVER/0.1','service':'JFE','version':VERSION,'state':'AVAILABLE' if not blockers else 'PARTIAL',
-      'mode':mode,'requested_at_jst':jst.isoformat(),'target_date':td,'request':{'venue':venue,'race_no':race_no},
-      'resolved_venue_code':vc,'resolved_venue_name':_B56_VENUES.get(vc),'selected_target':selected,'candidate_count':len(filtered),'candidates':filtered,
-      'blockers':blockers,'race_verification_state':rv.get('state'),'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    state='AVAILABLE' if not blockers else 'PARTIAL'
+    return {'schema':'JFE-TARGET-RESOLVER/0.2','service':'JFE','version':VERSION,'state':state,'mode':mode,
+      'requested_at_jst':jst.isoformat(),'target_date':td,'request':{'venue':venue,'race_no':race_no},
+      'resolved_venue_code':vc,'resolved_venue_name':_B56_VENUES.get(vc),'selected_target':selected,
+      'candidate_count':len(filtered),'candidates':filtered,'excluded_started_count':len(excluded_started),
+      'unresolved_start_count':len(unresolved),'blockers':blockers,'race_verification_state':rv.get('state'),
+      'scheduled_start_policy':'SOURCE_BOUND_KDREAMS_RACEDETAIL_EXPLICIT_TIME_ONLY',
+      'unstarted_policy':'scheduled_start > requested_at_jst','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 def live_target_contract_b56(target_date,venue,race_no):
-    started=time.time(); res=resolve_target_b56('RACE',target_date,venue,race_no)
-    sel=res.get('selected_target')
+    started=time.time(); res=resolve_target_b56('RACE',target_date,venue,race_no); sel=res.get('selected_target')
     if not sel:return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':res,'strict_contract':None,'fabricated_data':False}
-    selector={'venue':sel['venue_code'],'race_no':sel['race_no']}
-    b50=live_gpt_race_input_b50(target_date,selector); ri=b50.get('race_input')
+    selector={'venue':sel['venue_code'],'race_no':sel['race_no']}; b50=live_gpt_race_input_b50(target_date,selector); ri=b50.get('race_input')
     if not ri:return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'ERROR','target_resolution':res,'strict_contract':None,'fabricated_data':False}
+    # Propagate source-bound scheduled start into quality evidence; never replace with request/acquisition time.
+    ss=sel.get('scheduled_start') or {}
+    ri['scheduled_start']=ss
+    if isinstance(ri.get('quality'),dict) and isinstance(ri['quality'].get('completeness'),dict): ri['quality']['completeness']['scheduled_start']=ss.get('state')=='AVAILABLE'
     ri2,cross=apply_cross_source_b521(ri,target_date); ri3,outlier=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3); contract=_b55_evidence_native_contract(integ)
-    return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
+    return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.2','service':'JFE','version':VERSION,'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
       'target_resolution':res,'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),'strict_contract':contract,
       'execution':{'state':'NOT_EXECUTED','reason':'PREDICTIVE_MODEL_CALIBRATION_AND_OOS_VALIDATION_REQUIRED'},'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 

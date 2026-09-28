@@ -1,8 +1,10 @@
 import html
 import os,json,time,re,html as H,urllib.request,hashlib,threading,queue
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b55"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -1101,11 +1103,11 @@ def canonical_market_bind_b494(raw,active):
     available=sum(v['state']=='AVAILABLE' for v in sections.values())
     return {"state":"AVAILABLE" if available==5 else ("PARTIAL" if available else "UNKNOWN"),"sections":sections,"available_section_count":available,"canonical_scope_selected":available>0,"bet_type_inference":False,"fabricated_data":False}
 
-def live_canonical_market_binding_b494(target_date):
+def live_canonical_market_binding_b494(target_date,target_selector=None):
     started=time.time(); stages={k:{"state":"NOT_STARTED"} for k in ('race_verification','entry_fetch','entry_parse','entry_integrity','odds_fetch','canonical_binding')}; recovery=[]; result={}
     rv=_bounded_stage('RACE_VERIFICATION',8,lambda:live_race_verification(target_date)); stages['race_verification']={k:v for k,v in rv.items() if k!='value'}
     if rv['state']!='COMPLETED': return _b494_response(target_date,started,stages,result,[{"reason":"RACE_VERIFICATION_"+rv['state']}],'ERROR')
-    chosen,diag=select_source_bound_race_b491(rv['value']); result['source_binding_diagnostics']=diag
+    chosen,diag=select_source_bound_race_b491(rv['value']) if not target_selector else select_source_bound_race_b56(rv['value'],target_selector); result['source_binding_diagnostics']=diag
     if not chosen:return _b494_response(target_date,started,stages,result,[{"reason":"NO_SOURCE_BOUND_RACE"}],'ERROR')
     venue,rn,url=chosen; odds_url=_odds_url_from_racedetail(url); result['selected_race']={"kaisai_date_id":venue.get('kaisai_date_id'),"venue_code":venue.get('venue_code'),"race_no":rn,"source_racedetail_url":url,"odds_url":odds_url}
     def fetch1(u,ua):
@@ -1885,9 +1887,9 @@ def build_gpt_race_input_b50(binding):
       'handoff':{'consumer':'GPT_JOHNNY_ENGINE','machine_readable':True,'raw_html_included':False},
       'fabricated_data':False}
 
-def live_gpt_race_input_b50(target_date):
+def live_gpt_race_input_b50(target_date,target_selector=None):
     started=time.time()
-    upstream=live_canonical_market_binding_b494(target_date)
+    upstream=live_canonical_market_binding_b494(target_date,target_selector)
     if upstream.get('state') not in ('AVAILABLE','PARTIAL'):
         return {'schema':'JFE-GPT-HANDOFF/0.1','service':'JFE','version':VERSION,'target_date':target_date,'state':'ERROR','acquired_at':now(),'upstream_state':upstream.get('state'),'upstream_recovery_queue':upstream.get('recovery_queue',[]),'race_input':None,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
     ri=build_gpt_race_input_b50(upstream)
@@ -2213,6 +2215,83 @@ def live_johnny_contract_b55(target_date):
       'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),
       'strict_contract':contract,'execution':execution,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+# ===== DEV-B56 Request-Time / Explicit Target Resolver =====
+# Resolves target identity before acquisition. NOW never claims an unstarted race unless
+# scheduled-start evidence is bound; explicit venue/race selection is source-link bound.
+_B56_VENUES={
+ '11':'函館','12':'青森','13':'いわき平','21':'弥彦','22':'前橋','23':'取手','24':'宇都宮','25':'大宮','26':'西武園','27':'京王閣','28':'立川','31':'松戸','32':'千葉','34':'川崎','35':'平塚','36':'小田原','37':'伊東温泉','38':'静岡','42':'名古屋','43':'岐阜','44':'大垣','45':'豊橋','46':'富山','47':'松阪','48':'四日市','51':'福井','53':'奈良','54':'向日町','55':'和歌山','56':'岸和田','61':'玉野','62':'広島','63':'防府','71':'高松','73':'小松島','74':'高知','75':'松山','81':'小倉','83':'久留米','84':'武雄','85':'佐世保','86':'別府','87':'熊本'}
+_B56_ALIAS={re.sub(r'[^0-9A-Za-z一-龯ぁ-んァ-ヶー]','',v):k for k,v in _B56_VENUES.items()}
+_B56_ALIAS.update({'伊東':'37','いわき':'13','平':'13'})
+
+def _b56_jst_now(): return datetime.now(ZoneInfo('Asia/Tokyo'))
+def _b56_norm_venue(v):
+    if v is None:return None
+    x=str(v).strip()
+    if re.fullmatch(r'\d{1,2}',x): return x.zfill(2)
+    key=re.sub(r'[^0-9A-Za-z一-龯ぁ-んァ-ヶー]','',x)
+    return _B56_ALIAS.get(key)
+
+def _b56_identity_rows(rv):
+    rows=[]
+    for venue in rv.get('venues') or []:
+        if venue.get('state')!='VERIFIED_VENUE':continue
+        ident={}
+        for ev in venue.get('evidence') or []: ident.update(ev.get('race_identity_evidence') or {})
+        for rn in sorted(ident,key=lambda x:int(x)):
+            urls=ident.get(rn) or []
+            if not urls:continue
+            rows.append({'kaisai_date_id':venue.get('kaisai_date_id'),'venue_code':str(venue.get('venue_code') or '').zfill(2),
+              'venue_name':_B56_VENUES.get(str(venue.get('venue_code') or '').zfill(2)),'race_no':int(rn),'source_racedetail_url':urls[0],
+              'identity_state':'VERIFIED','scheduled_start':{'state':'UNKNOWN','value':None,'reason':'START_TIME_NOT_BOUND_IN_B56'}})
+    return rows
+
+def select_source_bound_race_b56(rv,selector):
+    rows=_b56_identity_rows(rv); vc=_b56_norm_venue((selector or {}).get('venue')); rn=(selector or {}).get('race_no')
+    try: rn=int(rn) if rn is not None else None
+    except Exception: rn=None
+    matches=[r for r in rows if (vc is None or r['venue_code']==vc) and (rn is None or r['race_no']==rn)]
+    diag={'mode':'B56_EXPLICIT_SELECTOR','requested_venue':(selector or {}).get('venue'),'resolved_venue_code':vc,'requested_race_no':rn,
+      'candidate_count':len(rows),'match_count':len(matches),'ambiguity_policy':'REQUIRE_UNIQUE_MATCH'}
+    if len(matches)!=1:return None,diag
+    r=matches[0]; venue=next(v for v in rv.get('venues') or [] if v.get('kaisai_date_id')==r['kaisai_date_id'])
+    return (venue,r['race_no'],r['source_racedetail_url']),diag
+
+def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
+    started=time.time(); jst=_b56_jst_now(); mode=str(mode or 'NOW').upper()
+    td=target_date or jst.date().isoformat()
+    rv=live_race_verification(td); rows=_b56_identity_rows(rv); vc=_b56_norm_venue(venue)
+    filtered=[r for r in rows if (vc is None or r['venue_code']==vc) and (race_no is None or r['race_no']==int(race_no))]
+    blockers=[]; selected=None
+    if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
+    if mode=='RACE':
+        if vc is None:blockers.append('VENUE_REQUIRED')
+        if race_no is None:blockers.append('RACE_NO_REQUIRED')
+        if len(filtered)==1:selected=filtered[0]
+        elif not blockers:blockers.append('TARGET_NOT_UNIQUELY_BOUND')
+    elif mode=='VENUE':
+        if vc is None:blockers.append('VENUE_REQUIRED')
+    elif mode=='NOW':
+        # Request time/date is authoritative, but start-time evidence is not yet bound.
+        blockers.append('SCHEDULED_START_EVIDENCE_REQUIRED_FOR_UNSTARTED_FILTER')
+    else:blockers.append('UNSUPPORTED_MODE')
+    return {'schema':'JFE-TARGET-RESOLVER/0.1','service':'JFE','version':VERSION,'state':'AVAILABLE' if not blockers else 'PARTIAL',
+      'mode':mode,'requested_at_jst':jst.isoformat(),'target_date':td,'request':{'venue':venue,'race_no':race_no},
+      'resolved_venue_code':vc,'resolved_venue_name':_B56_VENUES.get(vc),'selected_target':selected,'candidate_count':len(filtered),'candidates':filtered,
+      'blockers':blockers,'race_verification_state':rv.get('state'),'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
+def live_target_contract_b56(target_date,venue,race_no):
+    started=time.time(); res=resolve_target_b56('RACE',target_date,venue,race_no)
+    sel=res.get('selected_target')
+    if not sel:return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':res,'strict_contract':None,'fabricated_data':False}
+    selector={'venue':sel['venue_code'],'race_no':sel['race_no']}
+    b50=live_gpt_race_input_b50(target_date,selector); ri=b50.get('race_input')
+    if not ri:return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'ERROR','target_resolution':res,'strict_contract':None,'fabricated_data':False}
+    ri2,cross=apply_cross_source_b521(ri,target_date); ri3,outlier=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3); contract=_b55_evidence_native_contract(integ)
+    return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.1','service':'JFE','version':VERSION,'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
+      'target_resolution':res,'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),'strict_contract':contract,
+      'execution':{'state':'NOT_EXECUTED','reason':'PREDICTIVE_MODEL_CALIBRATION_AND_OOS_VALIDATION_REQUIRED'},'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2222,6 +2301,18 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  tr=re.fullmatch(r"/v1/target-resolver(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if tr:
+   q=parse_qs(urlparse(self.path).query); mode=(q.get("mode") or ["NOW"])[0]; venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]
+   try: rn=int(rn) if rn is not None else None
+   except Exception: rn=None
+   result=resolve_target_b56(mode,tr.group(1),venue,rn); return self.j(200,result)
+  tsc=re.fullmatch(r"/v1/targeted-strict-contract/(\d{4}-\d{2}-\d{2})",p)
+  if tsc:
+   q=parse_qs(urlparse(self.path).query); venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]
+   try: rn=int(rn) if rn is not None else None
+   except Exception: rn=None
+   result=live_target_contract_b56(tsc.group(1),venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   b55=re.fullmatch(r"/v1/johnny-engine/strict-contract/(\d{4}-\d{2}-\d{2})",p)
   if b55:
    result=live_johnny_contract_b55(b55.group(1)); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

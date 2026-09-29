@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56.3"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2449,6 +2449,17 @@ class S(BaseHTTPRequestHandler):
    try: rn=int(rn) if rn is not None else None
    except Exception: rn=None
    result=_b5611_start_dom_probe(sdp.group(1),venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
+  # B56.3 explicit path routes avoid query-string separator/encoding ambiguity on mobile clients.
+  # Date is optional; omitted date resolves from request-time JST inside resolve_target_b56.
+  tvr=re.fullmatch(r"/v1/target-resolver/venue/([^/]+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if tvr:
+   venue=tvr.group(1); result=resolve_target_b56("VENUE",tvr.group(2),venue,None); return self.j(200,result)
+  trr=re.fullmatch(r"/v1/target-resolver/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if trr:
+   venue=trr.group(1); rn=int(trr.group(2)); result=resolve_target_b56("RACE",trr.group(3),venue,rn); return self.j(200,result)
+  tsr=re.fullmatch(r"/v1/targeted-strict-contract/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if tsr:
+   venue=tsr.group(1); rn=int(tsr.group(2)); td=tsr.group(3) or _b56_jst_now().date().isoformat(); result=live_target_contract_b56(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   tr=re.fullmatch(r"/v1/target-resolver(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if tr:
    q=parse_qs(urlparse(self.path).query); mode=(q.get("mode") or ["NOW"])[0]; venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]

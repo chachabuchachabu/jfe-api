@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56.1.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2347,17 +2347,24 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
             if dt>jst: future.append(r)
             else: excluded_started.append(r)
         filtered=future
+        # B56.2 deterministic acquisition target: the earliest source-verified unstarted race.
+        # This is a routing choice only, not a betting recommendation or value ranking.
+        if filtered:
+            filtered=sorted(filtered,key=lambda r:((r.get('scheduled_start') or {}).get('value') or '9999',str(r.get('venue_code') or ''),int(r.get('race_no') or 0)))
+            selected=dict(filtered[0])
+            selected['selection_basis']='EARLIEST_SOURCE_VERIFIED_UNSTARTED_RACE'
+            selected['seconds_to_scheduled_start']=max(0,int((datetime.fromisoformat(selected['scheduled_start']['value'])-jst).total_seconds()))
         if unresolved:blockers.append('SOME_SCHEDULED_STARTS_UNRESOLVED')
         if not filtered and not unresolved:blockers.append('NO_UNSTARTED_RACES_AT_REQUEST_TIME')
     else:blockers.append('UNSUPPORTED_MODE')
     state='AVAILABLE' if not blockers else 'PARTIAL'
-    return {'schema':'JFE-TARGET-RESOLVER/0.3','service':'JFE','version':VERSION,'state':state,'mode':mode,
+    return {'schema':'JFE-TARGET-RESOLVER/0.4','service':'JFE','version':VERSION,'state':state,'mode':mode,
       'requested_at_jst':jst.isoformat(),'target_date':td,'request':{'venue':venue,'race_no':race_no},
       'resolved_venue_code':vc,'resolved_venue_name':_B56_VENUES.get(vc),'selected_target':selected,
       'candidate_count':len(filtered),'candidates':filtered,'excluded_started_count':len(excluded_started),
       'unresolved_start_count':len(unresolved),'blockers':blockers,'race_verification_state':rv.get('state'),
       'scheduled_start_policy':'SOURCE_BODY_IDENTITY_BOUND_RACECARD_HEADER_START_ONLY',
-      'unstarted_policy':'scheduled_start > requested_at_jst','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+      'unstarted_policy':'scheduled_start > requested_at_jst','selection_policy':'EARLIEST_SOURCE_VERIFIED_UNSTARTED_RACE' if mode=='NOW' else 'EXPLICIT_REQUEST_SCOPE','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 def live_target_contract_b56(target_date,venue,race_no):
     started=time.time(); res=resolve_target_b56('RACE',target_date,venue,race_no); sel=res.get('selected_target')

@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56.1.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2346,6 +2346,60 @@ def live_target_contract_b56(target_date,venue,race_no):
       'target_resolution':res,'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),'strict_contract':contract,
       'execution':{'state':'NOT_EXECUTED','reason':'PREDICTIVE_MODEL_CALIBRATION_AND_OOS_VALIDATION_REQUIRED'},'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
+
+
+# ===== DEV-B56.1.1 Scheduled Start DOM Probe =====
+# Diagnostic only: expose source-local evidence around time tokens and likely start-time labels.
+# It does not promote any candidate to scheduled_start AVAILABLE.
+def _b5611_start_dom_probe(target_date,venue=None,race_no=None):
+    started=time.time(); jst=_b56_jst_now(); rv=live_race_verification(target_date); rows=_b56_identity_rows(rv)
+    vc=_b56_norm_venue(venue)
+    if vc is not None: rows=[r for r in rows if r.get('venue_code')==vc]
+    if race_no is not None:
+        try: rr=int(race_no); rows=[r for r in rows if int(r.get('race_no'))==rr]
+        except Exception: rows=[]
+    # One source-bound race is enough to discover the DOM contract; explicit selector wins.
+    row=rows[0] if rows else None
+    base={'schema':'JFE-SCHEDULED-START-DOM-PROBE/0.1','service':'JFE','version':VERSION,
+          'requested_at_jst':jst.isoformat(),'target_date':target_date,'request':{'venue':venue,'race_no':race_no},
+          'race_verification_state':rv.get('state'),'fabricated_data':False}
+    if not row:
+        base.update({'state':'PARTIAL','selected_target':None,'blockers':['NO_SOURCE_BOUND_RACE'],'request_elapsed_ms':round((time.time()-started)*1000,1)})
+        return base
+    url=str(row.get('source_racedetail_url') or '')
+    try:
+        raw,lat,tr=fetch(url,0); plain=txt(raw)
+        time_tokens=[]
+        for m in re.finditer(r'(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)',plain):
+            a=max(0,m.start()-90); b=min(len(plain),m.end()+90)
+            time_tokens.append({'value':m.group(0),'text_context':plain[a:b]})
+            if len(time_tokens)>=30: break
+        label_contexts=[]
+        for pat in ('発走','締切','投票','予定','レース情報'):
+            for m in re.finditer(pat,plain):
+                a=max(0,m.start()-120); b=min(len(plain),m.end()+180)
+                label_contexts.append({'label':pat,'text_context':plain[a:b]})
+                if len(label_contexts)>=30: break
+            if len(label_contexts)>=30: break
+        html_fragments=[]
+        # Preserve tag/class evidence around explicit HH:MM tokens without returning the whole page.
+        for m in re.finditer(r'(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?!\d)',raw):
+            a=max(0,m.start()-220); b=min(len(raw),m.end()+220)
+            frag=re.sub(r'\s+',' ',raw[a:b]).strip()
+            html_fragments.append({'value':m.group(0),'html_context':frag})
+            if len(html_fragments)>=20: break
+        explicit_old_regex=bool(re.search(r'発走\s*(\d{1,2}):(\d{2})',plain))
+        base.update({'state':'AVAILABLE','selected_target':row,'source':{'url':url,'transport':tr,'latency_ms':lat,
+                     'byte_length':len(raw.encode('utf-8')),'content_sha256':hashlib.sha256(raw.encode()).hexdigest()},
+                     'diagnostics':{'old_regex_matched':explicit_old_regex,'time_token_count':len(time_tokens),
+                     'time_tokens':time_tokens,'label_contexts':label_contexts,'html_fragments':html_fragments},
+                     'blockers':[],'request_elapsed_ms':round((time.time()-started)*1000,1)})
+        return base
+    except Exception as e:
+        base.update({'state':'ERROR','selected_target':row,'blockers':['SOURCE_FETCH_FAILED'],'error_type':type(e).__name__,'error':str(e),
+                     'request_elapsed_ms':round((time.time()-started)*1000,1)})
+        return base
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2355,6 +2409,12 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  sdp=re.fullmatch(r"/v1/scheduled-start-dom-probe/(\d{4}-\d{2}-\d{2})",p)
+  if sdp:
+   q=parse_qs(urlparse(self.path).query); venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]
+   try: rn=int(rn) if rn is not None else None
+   except Exception: rn=None
+   result=_b5611_start_dom_probe(sdp.group(1),venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   tr=re.fullmatch(r"/v1/target-resolver(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if tr:
    q=parse_qs(urlparse(self.path).query); mode=(q.get("mode") or ["NOW"])[0]; venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]

@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b57"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b57.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2375,9 +2375,15 @@ def live_target_contract_b56(target_date,venue,race_no):
     ss=sel.get('scheduled_start') or {}
     ri['scheduled_start']=ss
     if isinstance(ri.get('quality'),dict) and isinstance(ri['quality'].get('completeness'),dict): ri['quality']['completeness']['scheduled_start']=ss.get('state')=='AVAILABLE'
+    # B57.1: bind source-published standard-keirin line formation before the strict gate.
+    line_evidence=_b571_bind_line_formation(sel,target_date,ri.get('riders') or [])
+    if line_evidence.get('state')=='AVAILABLE':
+        ri['lines']={'state':'AVAILABLE','formations':line_evidence.get('formations') or [],
+                     'source':'KDREAMS_RACEDETAIL','evidence':line_evidence}
+        if isinstance(ri.get('quality'),dict) and isinstance(ri['quality'].get('completeness'),dict): ri['quality']['completeness']['lines']=True
     ri2,cross=apply_cross_source_b521(ri,target_date); ri3,outlier=apply_outlier_safety_b53(ri2); integ=build_je_integration_b51(ri3); contract=_b55_evidence_native_contract(integ)
-    return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.2','service':'JFE','version':VERSION,'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
-      'target_resolution':res,'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),'strict_contract':contract,
+    return {'schema':'JFE-TARGETED-STRICT-CONTRACT-LIVE/0.3','service':'JFE','version':VERSION,'state':'AVAILABLE' if contract.get('state')=='READY_FOR_MODEL_VALIDATION' else 'PARTIAL',
+      'target_resolution':res,'line_formation_evidence':line_evidence,'cross_source_evidence':cross,'outlier_safety_evidence':outlier,'integration_state':integ.get('state'),'strict_contract':contract,
       'execution':{'state':'NOT_EXECUTED','reason':'PREDICTIVE_MODEL_CALIBRATION_AND_OOS_VALIDATION_REQUIRED'},'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 
@@ -2434,6 +2440,64 @@ def _b5611_start_dom_probe(target_date,venue=None,race_no=None):
                      'request_elapsed_ms':round((time.time()-started)*1000,1)})
         return base
 
+
+# ===== DEV-B57.1 Verified Line Formation Binding =====
+# Source contract discovered by B57 LIVE probe:
+# racecard_footer-contents / dt=並び予想 / div.line_position.
+# icon_p space is a source-published formation boundary; pNNN is a car token.
+# No fixed line count, line size, or car count is assumed.
+def _b571_bind_line_formation(selected_target,target_date,riders):
+    started=time.time(); row=selected_target or {}; url=str(row.get('source_racedetail_url') or '')
+    base={'schema':'JFE-VERIFIED-LINE-FORMATION/0.1','state':'UNKNOWN','source':'KDREAMS_RACEDETAIL',
+          'source_url':url,'formations':[],'fabricated_data':False}
+    try:
+        raw,lat,tr=fetch(url,0)
+    except Exception as e:
+        base.update({'state':'ERROR','reason':'SOURCE_FETCH_FAILED','error_type':type(e).__name__,'error':str(e)}); return base
+    ev=_b5612_page_identity_and_start(raw)
+    expected_venue=str(row.get('venue_name') or '')
+    venue_ok=(ev.get('page_venue_name')==expected_venue or (expected_venue=='伊東温泉' and ev.get('page_venue_name') in ('伊東','伊東温泉')))
+    identity_ok=(ev.get('page_date')==target_date and ev.get('page_race_no')==int(row.get('race_no') or -1) and venue_ok)
+    base.update({'transport':tr,'latency_ms':lat,'content_sha256':hashlib.sha256(raw.encode()).hexdigest(),
+                 'body_identity':{'page_date':ev.get('page_date'),'page_venue_name':ev.get('page_venue_name'),'page_race_no':ev.get('page_race_no'),'verified':identity_ok}})
+    if not identity_ok:
+        base.update({'state':'ERROR','reason':'SOURCE_BODY_RACE_IDENTITY_MISMATCH'}); return base
+    # Scope to the footer block explicitly labelled 並び予想, then to line_position only.
+    m=re.search(r'<dl\b[^>]*class=["\\\'][^"\\\']*racecard_footer-contents[^"\\\']*["\\\'][^>]*>\s*<dt[^>]*>\s*並び予想\s*</dt>\s*<dd[^>]*>.*?<div\b[^>]*class=["\\\'][^"\\\']*line_position[^"\\\']*["\\\'][^>]*>(.*?)</div>',raw,re.S|re.I)
+    if not m:
+        base.update({'state':'UNKNOWN','reason':'LINE_POSITION_SOURCE_BLOCK_NOT_FOUND'}); return base
+    block=m.group(1)
+    chunks=re.split(r'(?=<span\b[^>]*class=["\\\'][^"\\\']*\bicon_p\b)',block,flags=re.I)
+    formations=[]; current=[]; tokens=[]
+    for ch in chunks:
+        om=re.match(r'<span\b[^>]*class=["\\\']([^"\\\']*)["\\\']',ch,re.I)
+        if not om: continue
+        classes=om.group(1).split()
+        if 'icon_p' not in classes: continue
+        if 'space' in classes:
+            if current: formations.append(current); current=[]
+            continue
+        nums=[int(x) for x in re.findall(r'class=["\\\'][^"\\\']*\bp(\d{3})\b[^"\\\']*["\\\']',ch,re.I) if int(x)>0]
+        if not nums: continue  # p000 arrow or non-car token
+        car=nums[0]; current.append(car); tokens.append(car)
+    if current: formations.append(current)
+    formations=[x for x in formations if x]
+    active=[]
+    for r in riders or []:
+        try: active.append(int(r.get('car_no')))
+        except Exception: pass
+    issues=[]
+    if not formations: issues.append('NO_FORMATIONS_PARSED')
+    if len(tokens)!=len(set(tokens)): issues.append('DUPLICATE_CAR_IN_FORMATIONS')
+    if set(tokens)!=set(active):
+        if set(active)-set(tokens): issues.append('ACTIVE_CAR_MISSING_FROM_FORMATIONS')
+        if set(tokens)-set(active): issues.append('UNKNOWN_CAR_IN_FORMATIONS')
+    if len(tokens)!=len(active): issues.append('FORMATION_CAR_COUNT_MISMATCH')
+    base.update({'state':'AVAILABLE' if not issues else 'PARTIAL','formations':formations,'source_car_order':tokens,
+                 'active_car_numbers':active,'integrity':{'all_active_cars_exactly_once':not issues,'issues':issues},
+                 'binding_method':'RACECARD_FOOTER_NARABI_LINE_POSITION_ICON_P_SPACE_BOUNDARY',
+                 'source_label':'並び予想','request_elapsed_ms':round((time.time()-started)*1000,1)})
+    return base
 
 # ===== DEV-B57 Verified Line Formation DOM Probe =====
 # Diagnostic-first implementation. It binds an explicit race through B56.3, then inspects only
@@ -2510,6 +2574,12 @@ class S(BaseHTTPRequestHandler):
    try: rn=int(rn) if rn is not None else None
    except Exception: rn=None
    result=_b5611_start_dom_probe(sdp.group(1),venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
+  lfb=re.fullmatch(r"/v1/line-formation/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if lfb:
+   venue=lfb.group(1); rn=int(lfb.group(2)); td=lfb.group(3) or _b56_jst_now().date().isoformat(); res=resolve_target_b56('RACE',td,venue,rn); sel=res.get('selected_target')
+   if not sel:return self.j(200,{'schema':'JFE-VERIFIED-LINE-FORMATION-LIVE/0.1','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':res,'line_formation':None,'fabricated_data':False})
+   b50=live_gpt_race_input_b50(td,{'venue':sel['venue_code'],'race_no':sel['race_no']}); ri=b50.get('race_input') or {}; le=_b571_bind_line_formation(sel,td,ri.get('riders') or [])
+   return self.j(200,{'schema':'JFE-VERIFIED-LINE-FORMATION-LIVE/0.1','service':'JFE','version':VERSION,'state':le.get('state'),'target_resolution':res,'line_formation':le,'fabricated_data':False})
   ldp=re.fullmatch(r"/v1/line-formation-dom-probe/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if ldp:
    venue=ldp.group(1); rn=int(ldp.group(2)); td=ldp.group(3) or _b56_jst_now().date().isoformat(); result=_b57_line_dom_probe(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

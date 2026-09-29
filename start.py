@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56.1.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b56.1.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2246,27 +2246,54 @@ def _b56_identity_rows(rv):
               'identity_state':'VERIFIED','scheduled_start':{'state':'UNKNOWN','value':None,'reason':'START_TIME_NOT_YET_BOUND'}})
     return rows
 
+def _b5612_page_identity_and_start(raw):
+    """Bind only source-visible race identity and the racecard header start time.
+    No generic HH:MM token is accepted because odds/sidebar times coexist on the page.
+    """
+    title_m=re.search(r'<title\b[^>]*>(.*?)</title>',raw,flags=re.S|re.I)
+    title=txt(title_m.group(1)) if title_m else ''
+    # KDreams title is race-local evidence: venue + N R + YYYY年MM月DD日.
+    dm=re.search(r'(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日',title)
+    rm=re.search(r'(?<!\d)(\d{1,2})R(?!\d)',title,re.I)
+    vm=re.search(r'([^ |｜]+?)競輪',title)
+    # Start must be the dd paired with dt.start inside the racecard header contract.
+    sm=re.search(r'<dt\b[^>]*class=["\'][^"\']*\bstart\b[^"\']*["\'][^>]*>\s*発走予定\s*</dt>\s*<dd\b[^>]*>\s*(\d{1,2}):(\d{2})\s*</dd>',raw,flags=re.S|re.I)
+    page_date=f'{int(dm.group(1)):04d}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}' if dm else None
+    return {'title':title,'page_date':page_date,'page_race_no':int(rm.group(1)) if rm else None,
+            'page_venue_name':vm.group(1).strip() if vm else None,
+            'start_hh':int(sm.group(1)) if sm else None,'start_mm':int(sm.group(2)) if sm else None,
+            'identity_evidence_source':'HTML_TITLE','start_evidence_source':'RACECARD_HEADER_DL_TIME_DT_START_DD'}
+
 def _b561_bind_start(row,target_date):
     out=dict(row); url=str(row.get('source_racedetail_url') or '')
-    # URL identity must itself contain venue + YYYYMMDD + race number before time evidence is trusted.
     token=re.search(r'/racedetail/(\d{2})(\d{8})(\d{4})(\d{2})/',url)
     if not token:
         out['scheduled_start']={'state':'ERROR','value':None,'reason':'SOURCE_URL_IDENTITY_UNPARSEABLE'}; return out
-    url_venue,url_date,url_dayseq,url_race=token.groups()
-    expected_date=target_date.replace('-','')
+    url_venue,url_date,url_dayseq,url_race=token.groups(); expected_date=target_date.replace('-','')
     if url_venue!=str(row.get('venue_code')).zfill(2) or url_date!=expected_date or int(url_race)!=int(row.get('race_no')):
-        out['scheduled_start']={'state':'ERROR','value':None,'reason':'RACE_DATE_IDENTITY_MISMATCH'}; return out
+        out['scheduled_start']={'state':'ERROR','value':None,'reason':'URL_RACE_DATE_IDENTITY_MISMATCH'}; return out
     try:
-        raw,lat,tr=fetch(url,0); plain=txt(raw)
-        # KDreams pages expose 発走 HH:MM; bind only explicit source text.
-        m=re.search(r'発走\s*(\d{1,2}):(\d{2})',plain)
-        if not m:
-            out['scheduled_start']={'state':'UNKNOWN','value':None,'reason':'EXPLICIT_START_TIME_NOT_FOUND','source_url':url,'transport':tr,'latency_ms':lat}; return out
-        hh,mm=int(m.group(1)),int(m.group(2))
+        raw,lat,tr=fetch(url,0); ev=_b5612_page_identity_and_start(raw)
+        # The response body, not merely the requested URL, must identify the same race/date.
+        expected_venue=str(row.get('venue_name') or '')
+        body_identity={'page_date':ev['page_date'],'page_venue_name':ev['page_venue_name'],'page_race_no':ev['page_race_no'],'html_title':ev['title']}
+        missing=[]
+        if ev['page_date'] is None: missing.append('PAGE_DATE')
+        if ev['page_race_no'] is None: missing.append('PAGE_RACE_NO')
+        if ev['page_venue_name'] is None: missing.append('PAGE_VENUE')
+        if missing:
+            out['scheduled_start']={'state':'ERROR','value':None,'reason':'SOURCE_BODY_IDENTITY_UNRESOLVED','missing':missing,'body_identity':body_identity,'source_url':url,'transport':tr,'latency_ms':lat}; return out
+        venue_ok=(ev['page_venue_name']==expected_venue or (expected_venue=='伊東温泉' and ev['page_venue_name'] in ('伊東','伊東温泉')))
+        if ev['page_date']!=target_date or ev['page_race_no']!=int(row.get('race_no')) or not venue_ok:
+            out['scheduled_start']={'state':'ERROR','value':None,'reason':'SOURCE_BODY_RACE_DATE_IDENTITY_MISMATCH','expected':{'date':target_date,'venue_name':expected_venue,'race_no':int(row.get('race_no'))},'observed':body_identity,'source_url':url,'transport':tr,'latency_ms':lat}; return out
+        hh,mm=ev['start_hh'],ev['start_mm']
+        if hh is None or mm is None:
+            out['scheduled_start']={'state':'UNKNOWN','value':None,'reason':'RACECARD_HEADER_START_NOT_FOUND','body_identity':body_identity,'source_url':url,'transport':tr,'latency_ms':lat}; return out
         if not (0<=hh<=23 and 0<=mm<=59):
             out['scheduled_start']={'state':'ERROR','value':None,'reason':'INVALID_SOURCE_START_TIME','source_url':url}; return out
         iso=f'{target_date}T{hh:02d}:{mm:02d}:00+09:00'
-        out['scheduled_start']={'state':'AVAILABLE','value':iso,'source_value':f'{hh:02d}:{mm:02d}','source_url':url,'source':'KDREAMS_RACEDETAIL','transport':tr,'latency_ms':lat}
+        out['scheduled_start']={'state':'AVAILABLE','value':iso,'source_value':f'{hh:02d}:{mm:02d}','source_url':url,'source':'KDREAMS_RACEDETAIL','transport':tr,'latency_ms':lat,
+          'body_identity':body_identity,'identity_evidence_source':ev['identity_evidence_source'],'start_evidence_source':ev['start_evidence_source']}
         return out
     except Exception as e:
         out['scheduled_start']={'state':'ERROR','value':None,'reason':'START_TIME_FETCH_ERROR','error_type':type(e).__name__,'error':str(e)}; return out
@@ -2324,12 +2351,12 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
         if not filtered and not unresolved:blockers.append('NO_UNSTARTED_RACES_AT_REQUEST_TIME')
     else:blockers.append('UNSUPPORTED_MODE')
     state='AVAILABLE' if not blockers else 'PARTIAL'
-    return {'schema':'JFE-TARGET-RESOLVER/0.2','service':'JFE','version':VERSION,'state':state,'mode':mode,
+    return {'schema':'JFE-TARGET-RESOLVER/0.3','service':'JFE','version':VERSION,'state':state,'mode':mode,
       'requested_at_jst':jst.isoformat(),'target_date':td,'request':{'venue':venue,'race_no':race_no},
       'resolved_venue_code':vc,'resolved_venue_name':_B56_VENUES.get(vc),'selected_target':selected,
       'candidate_count':len(filtered),'candidates':filtered,'excluded_started_count':len(excluded_started),
       'unresolved_start_count':len(unresolved),'blockers':blockers,'race_verification_state':rv.get('state'),
-      'scheduled_start_policy':'SOURCE_BOUND_KDREAMS_RACEDETAIL_EXPLICIT_TIME_ONLY',
+      'scheduled_start_policy':'SOURCE_BODY_IDENTITY_BOUND_RACECARD_HEADER_START_ONLY',
       'unstarted_policy':'scheduled_start > requested_at_jst','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 def live_target_contract_b56(target_date,venue,race_no):

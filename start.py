@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b57.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2388,6 +2388,52 @@ def live_target_contract_b56(target_date,venue,race_no):
 
 
 
+# ===== DEV-B58 Chronological Calibration Specimen Gate =====
+# Creates a leakage-auditable PRE-RACE specimen only. It does not fit, score, rank,
+# or execute a predictive model. A specimen is eligible only when its evidence was
+# acquired strictly before the source-bound scheduled start and the B55 strict
+# evidence-native contract is ready for model validation.
+def _b58_calibration_specimen(targeted):
+    tr=(targeted or {}).get('target_resolution') or {}; sel=tr.get('selected_target') or {}
+    contract=(targeted or {}).get('strict_contract') or {}; blockers=[]
+    requested=tr.get('requested_at_jst'); ss=((sel.get('scheduled_start') or {}).get('value'))
+    if contract.get('state')!='READY_FOR_MODEL_VALIDATION': blockers.append('STRICT_CONTRACT_NOT_READY')
+    acquired=None; scheduled=None
+    try: acquired=datetime.fromisoformat(requested) if requested else None
+    except Exception: blockers.append('ACQUISITION_TIMESTAMP_INVALID')
+    try: scheduled=datetime.fromisoformat(ss) if ss else None
+    except Exception: blockers.append('SCHEDULED_START_INVALID')
+    if not acquired: blockers.append('ACQUISITION_TIMESTAMP_MISSING')
+    if not scheduled: blockers.append('SCHEDULED_START_MISSING')
+    if acquired and scheduled and not acquired < scheduled: blockers.append('NOT_PRE_RACE_ACQUISITION')
+    rid=contract.get('race_id') or {}
+    target_key={'target_date':tr.get('target_date'),'kaisai_date_id':rid.get('kaisai_date_id'),
+                'venue_code':rid.get('venue_code'),'race_no':rid.get('race_no')}
+    # Canonical evidence only; excludes request latency and volatile transport timing.
+    evidence={'race_id':target_key,'race_type':contract.get('race_type'),'riders':contract.get('riders') or [],
+              'line_model':contract.get('line_model') or {},'market':contract.get('market') or {},
+              'wide_audit':contract.get('wide_audit') or {},'quality_evidence':contract.get('quality_evidence') or {}}
+    canon=json.dumps(evidence,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
+    formed={}
+    for name,sec in (contract.get('market') or {}).items():
+        qs=sec.get('quotes') or []; formed[name]={'quote_count':len(qs),'formed_quote_count':sum(1 for q in qs if q.get('odds')!=9999.9),
+          'source_9999_9_count':sum(1 for q in qs if q.get('odds')==9999.9)}
+    state='ELIGIBLE_PRE_RACE_SPECIMEN' if not blockers else 'BLOCKED'
+    return {'schema':'JFE-CALIBRATION-SPECIMEN/0.1','state':state,'blockers':blockers,'target_identity':target_key,
+      'acquired_at_jst':requested,'scheduled_start_jst':ss,'chronology':{'strictly_before_start':bool(acquired and scheduled and acquired<scheduled),
+      'rule':'acquired_at_jst < scheduled_start_jst'},'evidence_sha256':hashlib.sha256(canon).hexdigest(),
+      'market_formation':formed,'label':{'state':'NOT_ATTACHED','policy':'OFFICIAL_RESULT_MUST_BE_ACQUIRED_AFTER_RACE_AND_BOUND_TO_SAME_TARGET_IDENTITY'},
+      'model_action':{'state':'NOT_EXECUTED','reason':'CALIBRATION_DATASET_AND_OOS_VALIDATION_NOT_YET_ESTABLISHED'},
+      'durability':{'state':'VOLATILE_RESPONSE_ONLY','persistent_store':False},'fabricated_data':False}
+
+def live_calibration_specimen_b58(target_date,venue,race_no):
+    started=time.time(); targeted=live_target_contract_b56(target_date,venue,race_no); specimen=_b58_calibration_specimen(targeted)
+    return {'schema':'JFE-CALIBRATION-SPECIMEN-LIVE/0.1','service':'JFE','version':VERSION,
+      'state':'AVAILABLE' if specimen.get('state')=='ELIGIBLE_PRE_RACE_SPECIMEN' else 'PARTIAL',
+      'target_resolution':targeted.get('target_resolution'),'specimen':specimen,
+      'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
+
 # ===== DEV-B56.1.1 Scheduled Start DOM Probe =====
 # Diagnostic only: expose source-local evidence around time tokens and likely start-time labels.
 # It does not promote any candidate to scheduled_start AVAILABLE.
@@ -2591,6 +2637,9 @@ class S(BaseHTTPRequestHandler):
   trr=re.fullmatch(r"/v1/target-resolver/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if trr:
    venue=trr.group(1); rn=int(trr.group(2)); result=resolve_target_b56("RACE",trr.group(3),venue,rn); return self.j(200,result)
+  b58=re.fullmatch(r"/v1/calibration-specimen/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if b58:
+   venue=b58.group(1); rn=int(b58.group(2)); td=b58.group(3) or _b56_jst_now().date().isoformat(); result=live_calibration_specimen_b58(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   tsr=re.fullmatch(r"/v1/targeted-strict-contract/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if tsr:
    venue=tsr.group(1); rn=int(tsr.group(2)); td=tsr.group(3) or _b56_jst_now().date().isoformat(); result=live_target_contract_b56(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

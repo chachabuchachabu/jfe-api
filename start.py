@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b56.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b57"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2434,6 +2434,67 @@ def _b5611_start_dom_probe(target_date,venue=None,race_no=None):
                      'request_elapsed_ms':round((time.time()-started)*1000,1)})
         return base
 
+
+# ===== DEV-B57 Verified Line Formation DOM Probe =====
+# Diagnostic-first implementation. It binds an explicit race through B56.3, then inspects only
+# that source-bound KDreams race-detail body for line/formation evidence. It does NOT infer lines.
+def _b57_line_dom_probe(target_date, venue, race_no):
+    started=time.time()
+    res=resolve_target_b56('RACE',target_date,venue,race_no)
+    sel=res.get('selected_target')
+    base={'schema':'JFE-LINE-FORMATION-DOM-PROBE/0.1','service':'JFE','version':VERSION,
+          'target_resolution':res,'target_date':target_date,'request':{'venue':venue,'race_no':race_no},
+          'state':'PARTIAL','line_evidence_state':'UNKNOWN','fabricated_data':False}
+    if not sel:
+        base['blockers']=['TARGET_NOT_RESOLVED']; return base
+    url=sel.get('source_racedetail_url')
+    try:
+        raw,lat,tr=fetch(url)
+    except Exception as e:
+        base.update({'blockers':['SOURCE_FETCH_FAILED'],'error_type':type(e).__name__,'error':str(e)}); return base
+    body=txt(raw)
+    # Source-body identity is independently checked here; no URL-only trust.
+    title_m=re.search(r'<title[^>]*>(.*?)</title>',raw,re.S|re.I)
+    title=txt(title_m.group(1)) if title_m else None
+    date_m=re.search(r'(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日',title or body)
+    page_date=f'{int(date_m.group(1)):04d}-{int(date_m.group(2)):02d}-{int(date_m.group(3)):02d}' if date_m else None
+    race_m=re.search(r'\b(\d{1,2})R\b',title or '')
+    page_race_no=int(race_m.group(1)) if race_m else None
+    expected_venue=sel.get('venue_name')
+    venue_ok=bool(expected_venue and title and expected_venue in title)
+    identity_ok=(page_date==target_date and page_race_no==int(race_no) and venue_ok)
+    keywords=['並び予想','並び','ライン','周回予想','周回','展開予想']
+    hits=[]
+    for kw in keywords:
+        for m in list(re.finditer(re.escape(kw),raw,re.I))[:8]:
+            a=max(0,m.start()-700); b=min(len(raw),m.end()+1400)
+            frag=raw[a:b]
+            classes=[]
+            for c in re.findall(r'class=["\']([^"\']+)["\']',frag,re.I):
+                for x in c.split():
+                    if x not in classes: classes.append(x)
+            ids=[]
+            for x in re.findall(r'id=["\']([^"\']+)["\']',frag,re.I):
+                if x not in ids: ids.append(x)
+            hits.append({'keyword':kw,'html_excerpt':frag[:2400],'text_excerpt':txt(frag)[:1200],
+                         'nearby_classes':classes[:40],'nearby_ids':ids[:20]})
+    # Also expose likely class/id names containing line/order/yoso terms, without assigning semantics.
+    attrs=[]
+    for typ,val in re.findall(r'\b(class|id)=["\']([^"\']+)["\']',raw,re.I):
+        if re.search(r'(line|narabi|yoso|formation|syukai|shukai|racecard)',val,re.I):
+            item={'attribute':typ.lower(),'value':val}
+            if item not in attrs: attrs.append(item)
+    base.update({'state':'AVAILABLE' if identity_ok else 'PARTIAL',
+                 'source':{'name':'KDREAMS_RACEDETAIL','url':url,'transport':tr,'latency_ms':lat,
+                           'byte_length':len(raw.encode('utf-8','replace')),'content_sha256':hashlib.sha256(raw.encode()).hexdigest()},
+                 'body_identity':{'page_date':page_date,'page_venue_name':expected_venue if venue_ok else None,
+                                  'page_race_no':page_race_no,'html_title':title,'verified':identity_ok},
+                 'keyword_hit_count':len(hits),'keyword_hits':hits[:30],'candidate_attributes':attrs[:100],
+                 'line_evidence_state':'PROBE_ONLY_NOT_BOUND',
+                 'blockers':[] if identity_ok else ['SOURCE_BODY_RACE_IDENTITY_MISMATCH'],
+                 'request_elapsed_ms':round((time.time()-started)*1000,1)})
+    return base
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2449,6 +2510,9 @@ class S(BaseHTTPRequestHandler):
    try: rn=int(rn) if rn is not None else None
    except Exception: rn=None
    result=_b5611_start_dom_probe(sdp.group(1),venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
+  ldp=re.fullmatch(r"/v1/line-formation-dom-probe/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if ldp:
+   venue=ldp.group(1); rn=int(ldp.group(2)); td=ldp.group(3) or _b56_jst_now().date().isoformat(); result=_b57_line_dom_probe(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   # B56.3 explicit path routes avoid query-string separator/encoding ambiguity on mobile clients.
   # Date is optional; omitted date resolves from request-time JST inside resolve_target_b56.
   tvr=re.fullmatch(r"/v1/target-resolver/venue/([^/]+)(?:/(\d{4}-\d{2}-\d{2}))?",p)

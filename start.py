@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.6"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.7"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2381,6 +2381,27 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
     started=time.time(); jst=_b56_jst_now(); mode=str(mode or 'NOW').upper(); td=target_date or jst.date().isoformat()
     rv=live_race_verification(td); rows=_b56_identity_rows(rv); vc=_b56_norm_venue(venue)
     filtered=[r for r in rows if (vc is None or r['venue_code']==vc) and (race_no is None or r['race_no']==int(race_no))]
+    # B58.4.7: preserve discovery evidence even when explicit filtering yields zero rows.
+    # This makes venue/date discovery failures observable without changing selection semantics.
+    resolver_diag={
+      'raw_identity_row_count':len(rows),
+      'filtered_identity_row_count_before_multiday':len(filtered),
+      'requested_venue_code':vc,
+      'requested_race_no':int(race_no) if race_no is not None else None,
+      'race_verification':{
+        'state':rv.get('state'),'candidate_count':rv.get('candidate_count',0),
+        'verified_venue_count':rv.get('verified_venue_count',0),'source_url':rv.get('source_url'),
+        'error_type':rv.get('error_type'),'error':rv.get('error')},
+      'meeting_candidates':[]
+    }
+    for v in rv.get('venues') or []:
+        resolver_diag['meeting_candidates'].append({
+          'kaisai_date_id':v.get('kaisai_date_id'),'venue_code':v.get('venue_code'),
+          'bound_date':v.get('bound_date'),'state':v.get('state'),'race_count':v.get('race_count',0),
+          'races':v.get('races') or [],'source_racecard_urls':v.get('source_racecard_urls') or [],
+          'attempts':[{'url':e.get('url'),'http_status':e.get('http_status'),'byte_length':e.get('byte_length'),
+                       'race_numbers':e.get('race_numbers') or []} for e in (v.get('evidence') or [])],
+          'errors':v.get('errors') or []})
     blockers=[]; selected=None; excluded_started=[]; unresolved=[]
     if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
     if mode in ('NOW','VENUE','RACE') and filtered:
@@ -2428,7 +2449,8 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
       'candidate_count':len(filtered),'candidates':filtered,'excluded_started_count':len(excluded_started),
       'unresolved_start_count':len(unresolved),'blockers':blockers,'race_verification_state':rv.get('state'),
       'scheduled_start_policy':'SOURCE_BODY_IDENTITY_BOUND_RACECARD_HEADER_START_ONLY',
-      'unstarted_policy':'scheduled_start > requested_at_jst','selection_policy':'EARLIEST_SOURCE_VERIFIED_UNSTARTED_RACE' if mode=='NOW' else 'EXPLICIT_REQUEST_SCOPE','request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+      'unstarted_policy':'scheduled_start > requested_at_jst','selection_policy':'EARLIEST_SOURCE_VERIFIED_UNSTARTED_RACE' if mode=='NOW' else 'EXPLICIT_REQUEST_SCOPE',
+      'resolver_diagnostics':resolver_diag,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 def live_target_contract_b56(target_date,venue,race_no):
     started=time.time(); res=resolve_target_b56('RACE',target_date,venue,race_no); sel=res.get('selected_target')

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.4"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.5"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2552,6 +2552,20 @@ def _b5843_result_probe_fetch(url, timeout_s=3.0):
     except Exception as e:
         return {'url':url,'fetch_state':'ERROR','error_type':type(e).__name__,'error':str(e),'latency_ms':round((time.time()-t)*1000,1),'transport':'LIVE_BOUNDED_RESULT_PROBE'}
 
+def _b5845_result_identity(raw,target_date,sel):
+    """Validate result-page identity using the existing one-argument HTML parser."""
+    ev=_b5612_page_identity_and_start(raw)
+    expected_venue=str((sel or {}).get('venue_name') or '')
+    expected_race=(sel or {}).get('race_no')
+    body_identity={'page_date':ev.get('page_date'),'page_venue_name':ev.get('page_venue_name'),
+                   'page_race_no':ev.get('page_race_no'),'html_title':ev.get('title')}
+    venue_ok=(ev.get('page_venue_name')==expected_venue or
+              (expected_venue=='伊東温泉' and ev.get('page_venue_name') in ('伊東','伊東温泉')))
+    identity_ok=(ev.get('page_date')==target_date and ev.get('page_race_no')==int(expected_race) and venue_ok) if expected_race is not None else False
+    return {'identity_ok':identity_ok,'body_identity':body_identity,
+            'expected':{'date':target_date,'venue_name':expected_venue,'race_no':expected_race},
+            'identity_evidence_source':ev.get('identity_evidence_source')}
+
 def _b581_official_result(target_resolution, active_riders):
     sel=(target_resolution or {}).get('selected_target') or {}; target_date=(target_resolution or {}).get('target_date')
     ss=((sel.get('scheduled_start') or {}).get('value')); checked=_b56_jst_now(); blockers=[]
@@ -2583,7 +2597,7 @@ def _b581_official_result(target_resolution, active_riders):
         fr=fetched.get(url) or {'url':url,'fetch_state':'ERROR','error_type':'MISSING_PROBE_RESULT'}
         if fr.get('fetch_state')!='OK':
             attempts.append({k:v for k,v in fr.items() if k!='raw'}); continue
-        raw=fr.get('raw') or ''; lat=fr.get('latency_ms'); tr=fr.get('transport'); ident=_b5612_page_identity_and_start(raw,target_date,sel)
+        raw=fr.get('raw') or ''; lat=fr.get('latency_ms'); tr=fr.get('transport'); ident=_b5845_result_identity(raw,target_date,sel)
         if not ident.get('identity_ok'):
             attempts.append({'url':url,'state':'RACE_BINDING_ERROR','fetch_state':'OK','http_status':fr.get('http_status'),'transport':tr,'latency_ms':lat,'parser_reached':False,'body_identity':ident.get('body_identity')}); continue
         rows=_b581_parse_result_table(raw,active_riders)
@@ -2640,7 +2654,7 @@ def _b5844_official_result_stage_probe(target_date,venue,race_no,stage):
         out['resolver']={'state':tr.get('state'),'selected_target':sel,'elapsed_ms':round((time.time()-t)*1000,1),'blockers':tr.get('blockers') or []}
         if stage=='resolver' or not sel:
             out['state']='AVAILABLE' if sel else 'PARTIAL'; out['request_elapsed_ms']=round((time.time()-started)*1000,1); return out
-        urls=_b581_result_urls(sel)
+        urls=_b581_result_urls(sel.get('source_racedetail_url'))
         out['result_urls']={'state':'AVAILABLE' if urls else 'ERROR','urls':urls}
         if stage=='urls': out['state']='AVAILABLE' if urls else 'ERROR'; out['request_elapsed_ms']=round((time.time()-started)*1000,1); return out
         t=time.time(); result=_b581_official_result(tr,[])

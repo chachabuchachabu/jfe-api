@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.5"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.6"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2515,24 +2515,38 @@ def _b581_result_url(source_url):
     return _b581_result_urls(source_url)[0]
 
 def _b581_parse_result_table(raw, active_riders):
+    """Parse KDreams result table by semantic header names, never by guessed cell order."""
     active={int(r.get('car_no')):str(r.get('rider_name') or r.get('name') or '').replace(' ','').replace('　','') for r in (active_riders or []) if r.get('car_no') is not None}
+    required=('着順','車番','選手名')
     for table in re.findall(r'<table\b[^>]*>.*?</table>',raw,re.S|re.I):
-        plain=txt(table); header_key=re.sub(r'[\s　]+','',plain)
-        if not all(x in header_key for x in ('着順','車番','選手名')): continue
-        rows=[]
-        for tr in re.findall(r'<tr\b[^>]*>(.*?)</tr>',table,re.S|re.I):
+        trs=re.findall(r'<tr\b[^>]*>(.*?)</tr>',table,re.S|re.I)
+        header_idx=None
+        data_start=0
+        for ri,tr in enumerate(trs):
             cells=[txt(x) for x in re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>',tr,re.S|re.I)]
-            if len(cells)<3: continue
-            # Result rows have an explicit numeric finishing position and car number.
-            rank=None; car=None
-            for i,c in enumerate(cells[:4]):
-                if rank is None and re.fullmatch(r'\d{1,2}',c): rank=int(c); continue
-                if rank is not None and car is None and re.fullmatch(r'[1-9]',c): car=int(c); break
-            if rank is None or car is None: continue
-            name=''
-            for c in cells:
-                n=re.sub(r'[\s　]+','',c)
-                if car in active and active[car] and active[car] in n: name=active[car]; break
+            norm=[re.sub(r'[\s　]+','',c) for c in cells]
+            idx={}
+            for label in required:
+                for i,c in enumerate(norm):
+                    if label in c:
+                        idx[label]=i; break
+            if all(k in idx for k in required):
+                header_idx=idx; data_start=ri+1; break
+        if not header_idx:
+            continue
+        rows=[]
+        max_idx=max(header_idx.values())
+        for tr in trs[data_start:]:
+            cells=[txt(x) for x in re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>',tr,re.S|re.I)]
+            if len(cells)<=max_idx: continue
+            rank_s=re.sub(r'[\s　]+','',cells[header_idx['着順']])
+            car_s=re.sub(r'[\s　]+','',cells[header_idx['車番']])
+            name_s=re.sub(r'[\s　]+','',cells[header_idx['選手名']])
+            if not re.fullmatch(r'\d{1,2}',rank_s): continue
+            if not re.fullmatch(r'[1-9]',car_s): continue
+            rank=int(rank_s); car=int(car_s)
+            # Keep source name when present; active-rider data is enrichment only.
+            name=name_s
             if not name and car in active: name=active[car]
             rows.append({'finish_position':rank,'car_no':car,'rider_name':name})
         if rows:
@@ -2618,6 +2632,10 @@ def _b581_official_result(target_resolution, active_riders):
     if len(ranks)!=len(set(ranks)): issues.append('DUPLICATE_FINISH_POSITION')
     active={int(r.get('car_no')) for r in (active_riders or []) if r.get('car_no') is not None}
     if active and not set(cars).issubset(active): issues.append('UNKNOWN_CAR_IN_RESULT')
+    names=[str(r.get('rider_name') or '').strip() for r in rows]
+    if not names or all(not n for n in names): issues.append('RESULT_RIDER_NAMES_ALL_EMPTY')
+    if rows and ranks != sorted(ranks): issues.append('FINISH_POSITION_ORDER_INVALID')
+    if rows and ranks[0] != 1: issues.append('WINNER_ROW_MISSING')
     state='AVAILABLE' if not issues else 'PARTIAL'
     payload={'result_rows':rows,'finish_order':[r['car_no'] for r in rows],'winner':rows[0]['car_no'] if rows else None}
     canon=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()

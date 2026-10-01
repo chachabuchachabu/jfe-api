@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2434,6 +2434,91 @@ def live_calibration_specimen_b58(target_date,venue,race_no):
       'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
 
 
+
+# ===== DEV-B58.1 Official Result Binding =====
+# Fail-closed result label acquisition. Before scheduled start, the result is
+# deterministically NOT_PUBLISHED and no result fetch is attempted. After start,
+# KDreams result evidence is accepted only when source-body date/venue/race identity
+# matches the exact target and a result table explicitly contains 着順/車番/選手名.
+def _b581_result_url(source_url):
+    base=str(source_url or '').split('?',1)[0]
+    return base+'?pageType=result'
+
+def _b581_parse_result_table(raw, active_riders):
+    active={int(r.get('car_no')):str(r.get('rider_name') or r.get('name') or '').replace(' ','').replace('　','') for r in (active_riders or []) if r.get('car_no') is not None}
+    for table in re.findall(r'<table\b[^>]*>.*?</table>',raw,re.S|re.I):
+        plain=txt(table)
+        if not all(x in plain for x in ('着順','車番','選手名')): continue
+        rows=[]
+        for tr in re.findall(r'<tr\b[^>]*>(.*?)</tr>',table,re.S|re.I):
+            cells=[txt(x) for x in re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>',tr,re.S|re.I)]
+            if len(cells)<3: continue
+            # Result rows have an explicit numeric finishing position and car number.
+            rank=None; car=None
+            for i,c in enumerate(cells[:4]):
+                if rank is None and re.fullmatch(r'\d{1,2}',c): rank=int(c); continue
+                if rank is not None and car is None and re.fullmatch(r'[1-9]',c): car=int(c); break
+            if rank is None or car is None: continue
+            name=''
+            for c in cells:
+                n=re.sub(r'[\s　]+','',c)
+                if car in active and active[car] and active[car] in n: name=active[car]; break
+            if not name and car in active: name=active[car]
+            rows.append({'finish_position':rank,'car_no':car,'rider_name':name})
+        if rows:
+            rows=sorted({(r['finish_position'],r['car_no']):r for r in rows}.values(),key=lambda r:r['finish_position'])
+            return rows
+    return []
+
+def _b581_official_result(target_resolution, active_riders):
+    sel=(target_resolution or {}).get('selected_target') or {}; target_date=(target_resolution or {}).get('target_date')
+    ss=((sel.get('scheduled_start') or {}).get('value')); checked=_b56_jst_now(); blockers=[]
+    try: scheduled=datetime.fromisoformat(ss) if ss else None
+    except Exception: scheduled=None
+    base={'schema':'JFE-OFFICIAL-RESULT/0.1','source':'KDREAMS_RACEDETAIL_RESULT','checked_at_jst':checked.isoformat(),
+          'target_identity':{'target_date':target_date,'kaisai_date_id':sel.get('kaisai_date_id'),'venue_code':sel.get('venue_code'),'race_no':sel.get('race_no')},
+          'scheduled_start_jst':ss,'fabricated_data':False}
+    if not scheduled:
+        base.update({'state':'UNKNOWN','blockers':['SCHEDULED_START_MISSING_OR_INVALID']}); return base
+    if checked < scheduled:
+        base.update({'state':'NOT_PUBLISHED','reason':'RACE_NOT_STARTED_AT_RESULT_CHECK','result_rows':[],
+                     'chronology':{'after_scheduled_start':False},'blockers':[]}); return base
+    url=_b581_result_url(sel.get('source_racedetail_url'))
+    try: raw,lat,tr=fetch(url,0)
+    except Exception as e:
+        base.update({'state':'ERROR','source_url':url,'error_type':'NETWORK_ERROR','error':str(e),'blockers':['RESULT_FETCH_FAILED']}); return base
+    ident=_b5612_page_identity_and_start(raw,target_date,sel)
+    if not ident.get('identity_ok'):
+        base.update({'state':'ERROR','source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
+                     'error_type':'RACE_BINDING_ERROR','blockers':['RESULT_SOURCE_BODY_IDENTITY_MISMATCH']}); return base
+    rows=_b581_parse_result_table(raw,active_riders)
+    if not rows:
+        base.update({'state':'UNKNOWN','source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
+                     'result_rows':[],'reason':'NO_EXPLICIT_RESULT_TABLE_BOUND','blockers':['RESULT_PUBLICATION_STATE_UNRESOLVED']}); return base
+    cars=[int(r['car_no']) for r in rows]; ranks=[int(r['finish_position']) for r in rows]
+    issues=[]
+    if len(cars)!=len(set(cars)): issues.append('DUPLICATE_RESULT_CAR')
+    if len(ranks)!=len(set(ranks)): issues.append('DUPLICATE_FINISH_POSITION')
+    active={int(r.get('car_no')) for r in (active_riders or []) if r.get('car_no') is not None}
+    if active and not set(cars).issubset(active): issues.append('UNKNOWN_CAR_IN_RESULT')
+    state='AVAILABLE' if not issues else 'PARTIAL'
+    payload={'result_rows':rows,'finish_order':[r['car_no'] for r in rows],'winner':rows[0]['car_no'] if rows else None}
+    canon=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+    base.update({'state':state,'source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
+                 **payload,'integrity':{'issues':issues,'row_count':len(rows)},'content_sha256':hashlib.sha256(raw.encode()).hexdigest(),
+                 'label_sha256':hashlib.sha256(canon).hexdigest(),'chronology':{'after_scheduled_start':True},'blockers':issues})
+    return base
+
+def live_official_result_b581(target_date,venue,race_no):
+    started=time.time(); tr=resolve_target_b56('RACE',target_date,venue,race_no); sel=tr.get('selected_target')
+    if not sel:
+        return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.1','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':tr,'official_result':None,'fabricated_data':False}
+    # Active riders are source-bound to the same target and used only for result integrity/name binding.
+    b50=live_gpt_race_input_b50(target_date,{'venue':sel['venue_code'],'race_no':sel['race_no']}); ri=b50.get('race_input') or {}
+    result=_b581_official_result(tr,ri.get('riders') or [])
+    return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.1','service':'JFE','version':VERSION,'state':result.get('state'),
+            'target_resolution':tr,'official_result':result,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
 # ===== DEV-B56.1.1 Scheduled Start DOM Probe =====
 # Diagnostic only: expose source-local evidence around time tokens and likely start-time labels.
 # It does not promote any candidate to scheduled_start AVAILABLE.
@@ -2637,6 +2722,9 @@ class S(BaseHTTPRequestHandler):
   trr=re.fullmatch(r"/v1/target-resolver/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if trr:
    venue=trr.group(1); rn=int(trr.group(2)); result=resolve_target_b56("RACE",trr.group(3),venue,rn); return self.j(200,result)
+  b581=re.fullmatch(r"/v1/official-result/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if b581:
+   venue=b581.group(1); rn=int(b581.group(2)); td=b581.group(3) or _b56_jst_now().date().isoformat(); result=live_official_result_b581(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL","NOT_PUBLISHED","UNKNOWN") else 503,result)
   b58=re.fullmatch(r"/v1/calibration-specimen/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if b58:
    venue=b58.group(1); rn=int(b58.group(2)); td=b58.group(3) or _b56_jst_now().date().isoformat(); result=live_calibration_specimen_b58(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2301,6 +2301,14 @@ def _b584_resolve_multiday_row(row,target_date):
     r['meeting_identity_normalization']={'state':'ERROR','reason':'SOURCE_BODY_CANDIDATE_RESOLUTION_FAILED','candidate_count':len(candidates),'matched_candidate_count':len(ok)}
     return r
 
+def _b5841_probe_fetch(url, timeout_s=3.0):
+    """Single-attempt bounded fetch for B58.4 multiday identity probing only."""
+    t=time.time()
+    q=urllib.request.Request(url,headers={"User-Agent":"JFE/1.0-RC3 qualification","Cache-Control":"no-cache"})
+    with urllib.request.urlopen(q,timeout=timeout_s) as x:
+        r=x.read().decode("utf-8","replace")
+    return r,round((time.time()-t)*1000,1),"LIVE_BOUNDED_PROBE"
+
 def _b561_bind_start(row,target_date):
     out=dict(row); url=str(row.get('source_racedetail_url') or '')
     token=re.search(r'/racedetail/(\d{2})(\d{8})(\d{4})(\d{2})/',url)
@@ -2316,7 +2324,7 @@ def _b561_bind_start(row,target_date):
         out['scheduled_start']={'state':'ERROR','value':None,'reason':'URL_RACE_DATE_IDENTITY_MISMATCH',
           'expected_meeting_start_date':expected_meeting_date,'observed_url_meeting_start_date':url_date}; return out
     try:
-        raw,lat,tr=fetch(url,0); ev=_b5612_page_identity_and_start(raw)
+        raw,lat,tr=_b5841_probe_fetch(url,3.0); ev=_b5612_page_identity_and_start(raw)
         # The response body, not merely the requested URL, must identify the same race/date.
         expected_venue=str(row.get('venue_name') or '')
         body_identity={'page_date':ev['page_date'],'page_venue_name':ev['page_venue_name'],'page_race_no':ev['page_race_no'],'html_title':ev['title']}
@@ -2343,16 +2351,19 @@ def _b561_bind_start(row,target_date):
 
 def _b561_bind_many(rows,target_date):
     if not rows:return []
-    # Bounded parallelism keeps NOW useful without serially multiplying source latency.
-    from concurrent.futures import ThreadPoolExecutor,as_completed
-    result=[None]*len(rows)
-    with ThreadPoolExecutor(max_workers=min(8,len(rows))) as ex:
-        fut={ex.submit(_b561_bind_start,r,target_date):i for i,r in enumerate(rows)}
-        for f in as_completed(fut):
-            i=fut[f]
-            try: result[i]=f.result()
-            except Exception as e:
-                r=dict(rows[i]);r['scheduled_start']={'state':'ERROR','value':None,'reason':'START_BIND_WORKER_ERROR','error_type':type(e).__name__};result[i]=r
+    # B58.4.1: bounded candidate probing. Never let a slow source make the API blank/hang.
+    from concurrent.futures import ThreadPoolExecutor,wait
+    result=[None]*len(rows); ex=ThreadPoolExecutor(max_workers=min(8,len(rows)))
+    fut={ex.submit(_b561_bind_start,r,target_date):i for i,r in enumerate(rows)}
+    done,not_done=wait(list(fut),timeout=5.0)
+    for f in done:
+        i=fut[f]
+        try: result[i]=f.result()
+        except Exception as e:
+            r=dict(rows[i]);r['scheduled_start']={'state':'ERROR','value':None,'reason':'START_BIND_WORKER_ERROR','error_type':type(e).__name__};result[i]=r
+    for f in not_done:
+        i=fut[f]; f.cancel(); r=dict(rows[i]); r['scheduled_start']={'state':'ERROR','value':None,'reason':'IDENTITY_PROBE_DEADLINE_EXCEEDED','deadline_s':5.0}; result[i]=r
+    ex.shutdown(wait=False,cancel_futures=True)
     return result
 
 def select_source_bound_race_b56(rv,selector):

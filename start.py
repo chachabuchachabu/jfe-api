@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2440,15 +2440,21 @@ def live_calibration_specimen_b58(target_date,venue,race_no):
 # deterministically NOT_PUBLISHED and no result fetch is attempted. After start,
 # KDreams result evidence is accepted only when source-body date/venue/race identity
 # matches the exact target and a result table explicitly contains 着順/車番/選手名.
-def _b581_result_url(source_url):
+def _b581_result_urls(source_url):
     base=str(source_url or '').split('?',1)[0]
-    return base+'?pageType=result'
+    # KDreams race-detail result table is exposed by showResult. Keep the older
+    # result variant only as a diagnostic fallback because some pages expose
+    # different content under it.
+    return [base+'?pageType=showResult', base+'?pageType=result']
+
+def _b581_result_url(source_url):
+    return _b581_result_urls(source_url)[0]
 
 def _b581_parse_result_table(raw, active_riders):
     active={int(r.get('car_no')):str(r.get('rider_name') or r.get('name') or '').replace(' ','').replace('　','') for r in (active_riders or []) if r.get('car_no') is not None}
     for table in re.findall(r'<table\b[^>]*>.*?</table>',raw,re.S|re.I):
-        plain=txt(table)
-        if not all(x in plain for x in ('着順','車番','選手名')): continue
+        plain=txt(table); header_key=re.sub(r'[\s　]+','',plain)
+        if not all(x in header_key for x in ('着順','車番','選手名')): continue
         rows=[]
         for tr in re.findall(r'<tr\b[^>]*>(.*?)</tr>',table,re.S|re.I):
             cells=[txt(x) for x in re.findall(r'<t[dh]\b[^>]*>(.*?)</t[dh]>',tr,re.S|re.I)]
@@ -2483,18 +2489,25 @@ def _b581_official_result(target_resolution, active_riders):
     if checked < scheduled:
         base.update({'state':'NOT_PUBLISHED','reason':'RACE_NOT_STARTED_AT_RESULT_CHECK','result_rows':[],
                      'chronology':{'after_scheduled_start':False},'blockers':[]}); return base
-    url=_b581_result_url(sel.get('source_racedetail_url'))
-    try: raw,lat,tr=fetch(url,0)
-    except Exception as e:
-        base.update({'state':'ERROR','source_url':url,'error_type':'NETWORK_ERROR','error':str(e),'blockers':['RESULT_FETCH_FAILED']}); return base
-    ident=_b5612_page_identity_and_start(raw,target_date,sel)
-    if not ident.get('identity_ok'):
-        base.update({'state':'ERROR','source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
-                     'error_type':'RACE_BINDING_ERROR','blockers':['RESULT_SOURCE_BODY_IDENTITY_MISMATCH']}); return base
-    rows=_b581_parse_result_table(raw,active_riders)
-    if not rows:
-        base.update({'state':'UNKNOWN','source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
-                     'result_rows':[],'reason':'NO_EXPLICIT_RESULT_TABLE_BOUND','blockers':['RESULT_PUBLICATION_STATE_UNRESOLVED']}); return base
+    attempts=[]; bound=None
+    for url in _b581_result_urls(sel.get('source_racedetail_url')):
+        try: raw,lat,tr=fetch(url,0)
+        except Exception as e:
+            attempts.append({'url':url,'state':'ERROR','error_type':'NETWORK_ERROR','error':str(e)}); continue
+        ident=_b5612_page_identity_and_start(raw,target_date,sel)
+        if not ident.get('identity_ok'):
+            attempts.append({'url':url,'state':'RACE_BINDING_ERROR','transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity')}); continue
+        rows=_b581_parse_result_table(raw,active_riders)
+        attempts.append({'url':url,'state':'RESULT_TABLE_BOUND' if rows else 'NO_EXPLICIT_RESULT_TABLE','transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity')})
+        if rows:
+            bound=(url,raw,lat,tr,ident,rows); break
+    if not bound:
+        if attempts and all(a.get('state')=='ERROR' for a in attempts):
+            base.update({'state':'ERROR','source_attempts':attempts,'error_type':'NETWORK_ERROR','blockers':['RESULT_FETCH_FAILED']}); return base
+        if attempts and all(a.get('state') in ('ERROR','RACE_BINDING_ERROR') for a in attempts) and any(a.get('state')=='RACE_BINDING_ERROR' for a in attempts):
+            base.update({'state':'ERROR','source_attempts':attempts,'error_type':'RACE_BINDING_ERROR','blockers':['RESULT_SOURCE_BODY_IDENTITY_MISMATCH']}); return base
+        base.update({'state':'UNKNOWN','source_attempts':attempts,'result_rows':[],'reason':'NO_EXPLICIT_RESULT_TABLE_BOUND','blockers':['RESULT_PUBLICATION_STATE_UNRESOLVED']}); return base
+    url,raw,lat,tr,ident,rows=bound
     cars=[int(r['car_no']) for r in rows]; ranks=[int(r['finish_position']) for r in rows]
     issues=[]
     if len(cars)!=len(set(cars)): issues.append('DUPLICATE_RESULT_CAR')
@@ -2506,7 +2519,7 @@ def _b581_official_result(target_resolution, active_riders):
     canon=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
     base.update({'state':state,'source_url':url,'transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity'),
                  **payload,'integrity':{'issues':issues,'row_count':len(rows)},'content_sha256':hashlib.sha256(raw.encode()).hexdigest(),
-                 'label_sha256':hashlib.sha256(canon).hexdigest(),'chronology':{'after_scheduled_start':True},'blockers':issues})
+                 'label_sha256':hashlib.sha256(canon).hexdigest(),'chronology':{'after_scheduled_start':True},'source_attempts':attempts,'blockers':issues})
     return base
 
 def live_official_result_b581(target_date,venue,race_no):

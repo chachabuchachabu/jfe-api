@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.3"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2540,6 +2540,18 @@ def _b581_parse_result_table(raw, active_riders):
             return rows
     return []
 
+def _b5843_result_probe_fetch(url, timeout_s=3.0):
+    """Single-attempt bounded fetch used only by official-result probing."""
+    t=time.time()
+    q=urllib.request.Request(url,headers={"User-Agent":"JFE/1.0-RC3 qualification","Cache-Control":"no-cache"})
+    try:
+        with urllib.request.urlopen(q,timeout=timeout_s) as x:
+            status=getattr(x,'status',None) or x.getcode()
+            raw=x.read().decode('utf-8','replace')
+        return {'url':url,'fetch_state':'OK','http_status':status,'raw':raw,'latency_ms':round((time.time()-t)*1000,1),'transport':'LIVE_BOUNDED_RESULT_PROBE'}
+    except Exception as e:
+        return {'url':url,'fetch_state':'ERROR','error_type':type(e).__name__,'error':str(e),'latency_ms':round((time.time()-t)*1000,1),'transport':'LIVE_BOUNDED_RESULT_PROBE'}
+
 def _b581_official_result(target_resolution, active_riders):
     sel=(target_resolution or {}).get('selected_target') or {}; target_date=(target_resolution or {}).get('target_date')
     ss=((sel.get('scheduled_start') or {}).get('value')); checked=_b56_jst_now(); blockers=[]
@@ -2547,28 +2559,42 @@ def _b581_official_result(target_resolution, active_riders):
     except Exception: scheduled=None
     base={'schema':'JFE-OFFICIAL-RESULT/0.1','source':'KDREAMS_RACEDETAIL_RESULT','checked_at_jst':checked.isoformat(),
           'target_identity':{'target_date':target_date,'kaisai_date_id':sel.get('kaisai_date_id'),'venue_code':sel.get('venue_code'),'race_no':sel.get('race_no')},
-          'scheduled_start_jst':ss,'fabricated_data':False}
+          'scheduled_start_jst':ss,'fabricated_data':False,
+          'diagnostics':{'result_probe_policy':'PARALLEL_SINGLE_ATTEMPT','per_url_timeout_s':3.0,'overall_deadline_s':5.0}}
     if not scheduled:
         base.update({'state':'UNKNOWN','blockers':['SCHEDULED_START_MISSING_OR_INVALID']}); return base
     if checked < scheduled:
         base.update({'state':'NOT_PUBLISHED','reason':'RACE_NOT_STARTED_AT_RESULT_CHECK','result_rows':[],
                      'chronology':{'after_scheduled_start':False},'blockers':[]}); return base
+    urls=_b581_result_urls(sel.get('source_racedetail_url'))
+    from concurrent.futures import ThreadPoolExecutor,wait
+    ex=ThreadPoolExecutor(max_workers=len(urls)); fut={ex.submit(_b5843_result_probe_fetch,u,3.0):u for u in urls}
+    done,not_done=wait(list(fut),timeout=5.0); fetched={}
+    for f in done:
+        u=fut[f]
+        try: fetched[u]=f.result()
+        except Exception as e: fetched[u]={'url':u,'fetch_state':'ERROR','error_type':type(e).__name__,'error':str(e)}
+    for f in not_done:
+        u=fut[f]; f.cancel(); fetched[u]={'url':u,'fetch_state':'DEADLINE_EXCEEDED','error_type':'RESULT_PROBE_DEADLINE_EXCEEDED','deadline_s':5.0}
+    ex.shutdown(wait=False,cancel_futures=True)
     attempts=[]; bound=None
-    for url in _b581_result_urls(sel.get('source_racedetail_url')):
-        try: raw,lat,tr=fetch(url,0)
-        except Exception as e:
-            attempts.append({'url':url,'state':'ERROR','error_type':'NETWORK_ERROR','error':str(e)}); continue
-        ident=_b5612_page_identity_and_start(raw,target_date,sel)
+    # Preserve deterministic preference: showResult first, then result.
+    for url in urls:
+        fr=fetched.get(url) or {'url':url,'fetch_state':'ERROR','error_type':'MISSING_PROBE_RESULT'}
+        if fr.get('fetch_state')!='OK':
+            attempts.append({k:v for k,v in fr.items() if k!='raw'}); continue
+        raw=fr.get('raw') or ''; lat=fr.get('latency_ms'); tr=fr.get('transport'); ident=_b5612_page_identity_and_start(raw,target_date,sel)
         if not ident.get('identity_ok'):
-            attempts.append({'url':url,'state':'RACE_BINDING_ERROR','transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity')}); continue
+            attempts.append({'url':url,'state':'RACE_BINDING_ERROR','fetch_state':'OK','http_status':fr.get('http_status'),'transport':tr,'latency_ms':lat,'parser_reached':False,'body_identity':ident.get('body_identity')}); continue
         rows=_b581_parse_result_table(raw,active_riders)
-        attempts.append({'url':url,'state':'RESULT_TABLE_BOUND' if rows else 'NO_EXPLICIT_RESULT_TABLE','transport':tr,'latency_ms':lat,'body_identity':ident.get('body_identity')})
+        attempts.append({'url':url,'state':'RESULT_TABLE_BOUND' if rows else 'NO_EXPLICIT_RESULT_TABLE','fetch_state':'OK','http_status':fr.get('http_status'),'transport':tr,'latency_ms':lat,'parser_reached':True,'body_identity':ident.get('body_identity')})
         if rows:
             bound=(url,raw,lat,tr,ident,rows); break
+    base['diagnostics']['attempt_count']=len(attempts); base['diagnostics']['parser_reached']=any(a.get('parser_reached') for a in attempts)
     if not bound:
-        if attempts and all(a.get('state')=='ERROR' for a in attempts):
-            base.update({'state':'ERROR','source_attempts':attempts,'error_type':'NETWORK_ERROR','blockers':['RESULT_FETCH_FAILED']}); return base
-        if attempts and all(a.get('state') in ('ERROR','RACE_BINDING_ERROR') for a in attempts) and any(a.get('state')=='RACE_BINDING_ERROR' for a in attempts):
+        if attempts and all(a.get('fetch_state') in ('ERROR','DEADLINE_EXCEEDED') for a in attempts):
+            base.update({'state':'ERROR','source_attempts':attempts,'error_type':'NETWORK_OR_TIMEOUT_ERROR','blockers':['RESULT_FETCH_FAILED_OR_TIMED_OUT']}); return base
+        if attempts and all(a.get('state') in (None,'RACE_BINDING_ERROR') for a in attempts) and any(a.get('state')=='RACE_BINDING_ERROR' for a in attempts):
             base.update({'state':'ERROR','source_attempts':attempts,'error_type':'RACE_BINDING_ERROR','blockers':['RESULT_SOURCE_BODY_IDENTITY_MISMATCH']}); return base
         base.update({'state':'UNKNOWN','source_attempts':attempts,'result_rows':[],'reason':'NO_EXPLICIT_RESULT_TABLE_BOUND','blockers':['RESULT_PUBLICATION_STATE_UNRESOLVED']}); return base
     url,raw,lat,tr,ident,rows=bound

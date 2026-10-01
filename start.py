@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2264,48 +2264,42 @@ def _b5612_page_identity_and_start(raw):
             'start_hh':int(sm.group(1)) if sm else None,'start_mm':int(sm.group(2)) if sm else None,
             'identity_evidence_source':'HTML_TITLE','start_evidence_source':'RACECARD_HEADER_DL_TIME_DT_START_DD'}
 
-def _b583_normalize_multiday_row(row,target_date):
-    """Normalize KDreams meeting identity for multi-day meetings.
+def _b584_candidate_multiday_rows(row,target_date):
+    """Generate KDreams meeting/day candidates and let source-body identity decide.
 
-    KDreams kaisai_date_id encodes the meeting *start date* in positions 2:10,
-    while positions 10:12 encode the meeting day (01/02/03...).  Older JFE
-    discovery treated 2:10 as the race date, which can shift day-2/day-3 URLs
-    forward and bind them to the following day's race page.
-
-    This repair is deterministic but never trusted by itself: _b561_bind_start
-    still requires the fetched HTML title to match target date / venue / race.
+    A race on target_date may be meeting day 1, 2 or 3.  Candidate IDs are
+    venue + (target_date-(day_no-1)) + day_no + tail.  No candidate is trusted
+    until _b561_bind_start validates date/venue/race from the fetched HTML body.
     """
-    out=dict(row)
-    kid=str(out.get('kaisai_date_id') or '')
-    url=str(out.get('source_racedetail_url') or '')
+    out=[]; kid=str(row.get('kaisai_date_id') or ''); url=str(row.get('source_racedetail_url') or '')
     m=re.fullmatch(r'(\d{2})(\d{8})(\d{2})(\d{2})',kid)
     if not m:
-        out['meeting_identity_normalization']={'state':'NOT_APPLIED','reason':'KAISAI_DATE_ID_UNPARSEABLE'}
-        return out
-    vc,old_base,day_s,tail=m.groups()
-    try:
-        day_no=int(day_s)
-        if not (1 <= day_no <= 7): raise ValueError('day sequence out of range')
-        race_day=datetime.strptime(target_date,'%Y-%m-%d').date()
-        expected_base=(race_day-timedelta(days=day_no-1)).strftime('%Y%m%d')
+        r=dict(row); r['meeting_identity_normalization']={'state':'NOT_APPLIED','reason':'KAISAI_DATE_ID_UNPARSEABLE'}; return [r]
+    vc,old_base,old_day,tail=m.groups()
+    try: race_day=datetime.strptime(target_date,'%Y-%m-%d').date()
     except Exception:
-        out['meeting_identity_normalization']={'state':'NOT_APPLIED','reason':'DAY_SEQUENCE_OR_TARGET_DATE_INVALID'}
-        return out
-    new_kid=f'{vc}{expected_base}{day_s}{tail}'
-    new_url=url
-    if old_base != expected_base:
-        # Replace only the exact meeting-id segment; never free-form mutate URL text.
-        new_url=url.replace(kid,new_kid,1) if kid in url else url
-        out['kaisai_date_id']=new_kid
-        out['source_racedetail_url']=new_url
-        out['meeting_identity_normalization']={'state':'REPAIRED','reason':'MULTIDAY_MEETING_START_DATE_NORMALIZED',
-          'original_kaisai_date_id':kid,'normalized_kaisai_date_id':new_kid,
-          'target_race_date':target_date,'meeting_day_no':day_no,'expected_meeting_start_date':expected_base,
-          'original_source_url':url,'normalized_source_url':new_url}
-    else:
-        out['meeting_identity_normalization']={'state':'UNCHANGED','reason':'MEETING_START_DATE_ALREADY_CONSISTENT',
-          'meeting_day_no':day_no,'expected_meeting_start_date':expected_base}
+        r=dict(row); r['meeting_identity_normalization']={'state':'NOT_APPLIED','reason':'TARGET_DATE_INVALID'}; return [r]
+    for day_no in (1,2,3):
+        base=(race_day-timedelta(days=day_no-1)).strftime('%Y%m%d'); nk=f'{vc}{base}{day_no:02d}{tail}'
+        r=dict(row); r['kaisai_date_id']=nk
+        r['source_racedetail_url']=url.replace(kid,nk,1) if kid in url else re.sub(r'/racedetail/\d{14}/',f'/racedetail/{nk}/',url,count=1)
+        r['meeting_identity_normalization']={'state':'CANDIDATE','reason':'SOURCE_BODY_VALIDATED_MULTIDAY_CANDIDATE',
+          'original_kaisai_date_id':kid,'candidate_kaisai_date_id':nk,'target_race_date':target_date,
+          'candidate_meeting_day_no':day_no,'candidate_meeting_start_date':base,'original_source_url':url,
+          'candidate_source_url':r['source_racedetail_url']}
+        out.append(r)
     return out
+
+def _b584_resolve_multiday_row(row,target_date):
+    candidates=_b584_candidate_multiday_rows(row,target_date)
+    bound=_b561_bind_many(candidates,target_date)
+    ok=[r for r in bound if (r.get('scheduled_start') or {}).get('state')=='AVAILABLE']
+    if len(ok)==1:
+        r=ok[0]; meta=dict(r.get('meeting_identity_normalization') or {}); meta['state']='REPAIRED' if r.get('kaisai_date_id')!=row.get('kaisai_date_id') else 'VERIFIED'; meta['reason']='UNIQUE_SOURCE_BODY_IDENTITY_MATCH'; meta['candidate_count']=len(candidates); r['meeting_identity_normalization']=meta; return r
+    r=dict(row); r['scheduled_start']={'state':'ERROR','value':None,'reason':'MULTIDAY_IDENTITY_NOT_UNIQUELY_RESOLVED','matched_candidate_count':len(ok),
+      'candidate_diagnostics':[{'kaisai_date_id':x.get('kaisai_date_id'),'source_url':x.get('source_racedetail_url'),'scheduled_start':x.get('scheduled_start')} for x in bound]}
+    r['meeting_identity_normalization']={'state':'ERROR','reason':'SOURCE_BODY_CANDIDATE_RESOLUTION_FAILED','candidate_count':len(candidates),'matched_candidate_count':len(ok)}
+    return r
 
 def _b561_bind_start(row,target_date):
     out=dict(row); url=str(row.get('source_racedetail_url') or '')
@@ -2379,8 +2373,9 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
     blockers=[]; selected=None; excluded_started=[]; unresolved=[]
     if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
     if mode in ('NOW','VENUE','RACE') and filtered:
-        filtered=[_b583_normalize_multiday_row(r,td) for r in filtered]
-        filtered=_b561_bind_many(filtered,td)
+        # B58.4: do not trust discovery day-sequence. Probe day 1..3 identities and
+        # accept only the unique source-body date/venue/race match.
+        filtered=[_b584_resolve_multiday_row(r,td) for r in filtered]
     if mode=='RACE':
         if vc is None:blockers.append('VENUE_REQUIRED')
         if race_no is None:blockers.append('RACE_NO_REQUIRED')

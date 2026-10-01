@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2387,6 +2387,14 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
         # B58.4: do not trust discovery day-sequence. Probe day 1..3 identities and
         # accept only the unique source-body date/venue/race match.
         filtered=[_b584_resolve_multiday_row(r,td) for r in filtered]
+        # B58.4.2: different discovery rows may source-validate to the same canonical race.
+        # Deduplicate only after source-body identity binding, preserving first evidence row.
+        deduped=[]; seen=set()
+        for r in filtered:
+            key=(str(r.get('kaisai_date_id') or ''),str(r.get('venue_code') or ''),int(r.get('race_no') or 0))
+            if key in seen: continue
+            seen.add(key); deduped.append(r)
+        filtered=deduped
     if mode=='RACE':
         if vc is None:blockers.append('VENUE_REQUIRED')
         if race_no is None:blockers.append('RACE_NO_REQUIRED')

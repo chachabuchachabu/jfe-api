@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.4"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2613,14 +2613,41 @@ def _b581_official_result(target_resolution, active_riders):
     return base
 
 def live_official_result_b581(target_date,venue,race_no):
-    started=time.time(); tr=resolve_target_b56('RACE',target_date,venue,race_no); sel=tr.get('selected_target')
-    if not sel:
-        return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.1','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':tr,'official_result':None,'fabricated_data':False}
-    # Active riders are source-bound to the same target and used only for result integrity/name binding.
-    b50=live_gpt_race_input_b50(target_date,{'venue':sel['venue_code'],'race_no':sel['race_no']}); ri=b50.get('race_input') or {}
-    result=_b581_official_result(tr,ri.get('riders') or [])
-    return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.1','service':'JFE','version':VERSION,'state':result.get('state'),
-            'target_resolution':tr,'official_result':result,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    # B58.4.4: official-result acquisition must not depend on the full B50 pre-race
+    # acquisition pipeline. Result rows can be source-bound to the canonical target
+    # without fetching riders first; rider-set integrity is optional enrichment.
+    started=time.time(); stages=[]
+    try:
+        t=time.time(); tr=resolve_target_b56('RACE',target_date,venue,race_no); sel=tr.get('selected_target')
+        stages.append({'stage':'TARGET_RESOLVER','state':'COMPLETED','elapsed_ms':round((time.time()-t)*1000,1),'selected':bool(sel)})
+        if not sel:
+            return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.2','service':'JFE','version':VERSION,'state':'PARTIAL','target_resolution':tr,'official_result':None,'stage_diagnostics':stages,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+        t=time.time(); result=_b581_official_result(tr,[])
+        stages.append({'stage':'OFFICIAL_RESULT_DIRECT','state':'COMPLETED','elapsed_ms':round((time.time()-t)*1000,1),'result_state':result.get('state')})
+        return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.2','service':'JFE','version':VERSION,'state':result.get('state'),
+                'target_resolution':tr,'official_result':result,'stage_diagnostics':stages,
+                'rider_integrity_enrichment':{'state':'SKIPPED','reason':'B58_4_4_DECOUPLED_FROM_FULL_B50_PIPELINE'},
+                'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+    except Exception as e:
+        stages.append({'stage':'TOP_LEVEL_EXCEPTION_GUARD','state':'ERROR','exception_type':type(e).__name__,'reason':str(e)[:500]})
+        return {'schema':'JFE-OFFICIAL-RESULT-LIVE/0.2','service':'JFE','version':VERSION,'state':'ERROR','target_resolution':locals().get('tr'),
+                'official_result':None,'stage_diagnostics':stages,'request_elapsed_ms':round((time.time()-started)*1000,1),'fabricated_data':False}
+
+def _b5844_official_result_stage_probe(target_date,venue,race_no,stage):
+    started=time.time(); out={'schema':'JFE-OFFICIAL-RESULT-STAGE-PROBE/0.1','service':'JFE','version':VERSION,'target_date':target_date,'request':{'venue':venue,'race_no':race_no,'stage':stage},'fabricated_data':False}
+    try:
+        t=time.time(); tr=resolve_target_b56('RACE',target_date,venue,race_no); sel=tr.get('selected_target')
+        out['resolver']={'state':tr.get('state'),'selected_target':sel,'elapsed_ms':round((time.time()-t)*1000,1),'blockers':tr.get('blockers') or []}
+        if stage=='resolver' or not sel:
+            out['state']='AVAILABLE' if sel else 'PARTIAL'; out['request_elapsed_ms']=round((time.time()-started)*1000,1); return out
+        urls=_b581_result_urls(sel)
+        out['result_urls']={'state':'AVAILABLE' if urls else 'ERROR','urls':urls}
+        if stage=='urls': out['state']='AVAILABLE' if urls else 'ERROR'; out['request_elapsed_ms']=round((time.time()-started)*1000,1); return out
+        t=time.time(); result=_b581_official_result(tr,[])
+        out['direct_result']={'state':result.get('state'),'source_attempts':result.get('source_attempts') or [],'source_url':result.get('source_url'),'finish_order':result.get('finish_order'),'winner':result.get('winner'),'blockers':result.get('blockers') or [],'elapsed_ms':round((time.time()-t)*1000,1)}
+        out['state']='AVAILABLE' if result.get('state')=='AVAILABLE' else 'PARTIAL'; out['request_elapsed_ms']=round((time.time()-started)*1000,1); return out
+    except Exception as e:
+        out.update({'state':'ERROR','exception_type':type(e).__name__,'reason':str(e)[:500],'request_elapsed_ms':round((time.time()-started)*1000,1)}); return out
 
 # ===== DEV-B56.1.1 Scheduled Start DOM Probe =====
 # Diagnostic only: expose source-local evidence around time tokens and likely start-time labels.
@@ -2825,6 +2852,9 @@ class S(BaseHTTPRequestHandler):
   trr=re.fullmatch(r"/v1/target-resolver/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if trr:
    venue=trr.group(1); rn=int(trr.group(2)); result=resolve_target_b56("RACE",trr.group(3),venue,rn); return self.j(200,result)
+  b5844=re.fullmatch(r"/v1/official-result-stage-probe/(resolver|urls|direct)/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if b5844:
+   stage=b5844.group(1); venue=b5844.group(2); rn=int(b5844.group(3)); td=b5844.group(4) or _b56_jst_now().date().isoformat(); result=_b5844_official_result_stage_probe(td,venue,rn,stage); return self.j(200,result)
   b581=re.fullmatch(r"/v1/official-result/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if b581:
    venue=b581.group(1); rn=int(b581.group(2)); td=b581.group(3) or _b56_jst_now().date().isoformat(); result=live_official_result_b581(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL","NOT_PUBLISHED","UNKNOWN") else 503,result)

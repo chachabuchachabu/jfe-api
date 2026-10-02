@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.4.3"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.5"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2452,7 +2452,7 @@ def _b5612_page_identity_and_start(raw):
 def _b584_candidate_multiday_rows(row,target_date):
     """Generate KDreams meeting/day candidates and let source-body identity decide.
 
-    A race on target_date may be meeting day 1, 2 or 3.  Candidate IDs are
+    A race on target_date may be meeting day 1 through 6.  Candidate IDs are
     venue + (target_date-(day_no-1)) + day_no + tail.  No candidate is trusted
     until _b561_bind_start validates date/venue/race from the fetched HTML body.
     """
@@ -2464,7 +2464,7 @@ def _b584_candidate_multiday_rows(row,target_date):
     try: race_day=datetime.strptime(target_date,'%Y-%m-%d').date()
     except Exception:
         r=dict(row); r['meeting_identity_normalization']={'state':'NOT_APPLIED','reason':'TARGET_DATE_INVALID'}; return [r]
-    for day_no in (1,2,3):
+    for day_no in range(1,7):
         base=(race_day-timedelta(days=day_no-1)).strftime('%Y%m%d'); nk=f'{vc}{base}{day_no:02d}{tail}'
         r=dict(row); r['kaisai_date_id']=nk
         r['source_racedetail_url']=url.replace(kid,nk,1) if kid in url else re.sub(r'/racedetail/\d{14}/',f'/racedetail/{nk}/',url,count=1)
@@ -2576,7 +2576,7 @@ _B5848_VENUE_SLUG={
 def _b5848_explicit_historical_fallback(vc,target_date,race_no):
     """Probe a historical explicit race when the KDreams current root has no meeting links.
 
-    Generate a neutral day-1 seed, expand day 1..3 through the existing B58.4
+    Generate a neutral day-1 seed, expand day 1..6 through the existing B58.4
     source-body validator, and return a candidate only when exactly one page proves
     the requested date/venue/race identity.  No guessed ID is promoted directly.
     """
@@ -2642,7 +2642,7 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
     blockers=[]; selected=None; excluded_started=[]; unresolved=[]
     if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
     if mode in ('NOW','VENUE','RACE') and filtered:
-        # B58.4: do not trust discovery day-sequence. Probe day 1..3 identities and
+        # B58.4: do not trust discovery day-sequence. Probe day 1..6 identities and
         # accept only the unique source-body date/venue/race match.
         filtered=[_b584_resolve_multiday_row(r,td) for r in filtered]
         # B58.4.2: different discovery rows may source-validate to the same canonical race.

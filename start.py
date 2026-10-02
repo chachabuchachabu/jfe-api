@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.8"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.0"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2926,6 +2926,82 @@ def _b57_line_dom_probe(target_date, venue, race_no):
                  'request_elapsed_ms':round((time.time()-started)*1000,1)})
     return base
 
+
+# ===== DEV-B59.0 Unified Race Package =====
+def live_race_package_b590(target_date, venue, race_no):
+    """Bind one explicit race and expose source-verified racecard, line/prediction evidence,
+    five-bet-type market, and official result under one target identity. Fail closed per component."""
+    started=time.time(); stages=[]
+    tr=resolve_target_b56('RACE',target_date,venue,race_no); sel=tr.get('selected_target')
+    stages.append({'stage':'TARGET_RESOLVER','state':'COMPLETED','selected':bool(sel)})
+    base={'schema':'JFE-RACE-PACKAGE-LIVE/0.1','service':'JFE','version':VERSION,
+          'target_date':target_date,'request':{'venue':venue,'race_no':int(race_no)},
+          'state':'PARTIAL','target_resolution':tr,'race':None,'racecard':None,
+          'prediction_evidence':None,'market':None,'official_result':None,
+          'stage_diagnostics':stages,'fabricated_data':False}
+    if not sel:
+        base['blockers']=['TARGET_NOT_RESOLVED']; base['request_elapsed_ms']=round((time.time()-started)*1000,1); return base
+    race_identity={'kaisai_date_id':sel.get('kaisai_date_id'),'venue_code':sel.get('venue_code'),
+                   'venue_name':sel.get('venue_name'),'race_no':sel.get('race_no'),
+                   'scheduled_start':sel.get('scheduled_start'),'source_racedetail_url':sel.get('source_racedetail_url')}
+    base['race']=race_identity
+    raw=None; entries=[]
+    try:
+        raw,lat,trn=_b5841_probe_fetch(sel.get('source_racedetail_url'),3.0)
+        ev=_b5612_page_identity_and_start(raw)
+        venue_ok=(ev.get('page_venue_name')==sel.get('venue_name') or (sel.get('venue_name')=='伊東温泉' and ev.get('page_venue_name') in ('伊東','伊東温泉')))
+        identity_ok=(ev.get('page_date')==target_date and ev.get('page_race_no')==int(race_no) and venue_ok)
+        parsed=parse_primary_racecard_entries(raw) if identity_ok else {'state':'ERROR','entries':[],'errors':['SOURCE_BODY_RACE_IDENTITY_MISMATCH']}
+        entries=parsed.get('entries') or []
+        base['racecard']={'state':parsed.get('state'),'entries':entries,'active_car_numbers':[e.get('car_no') for e in entries],
+                          'integrity':{'errors':parsed.get('errors',[])},'source_url':sel.get('source_racedetail_url'),
+                          'transport':trn,'latency_ms':lat,'body_identity':{'page_date':ev.get('page_date'),'page_venue_name':ev.get('page_venue_name'),'page_race_no':ev.get('page_race_no'),'verified':identity_ok},
+                          'content_sha256':hashlib.sha256(raw.encode()).hexdigest()}
+        stages.append({'stage':'RACECARD','state':base['racecard']['state'],'elapsed_ms':lat})
+    except Exception as e:
+        base['racecard']={'state':'ERROR','entries':[],'error_type':type(e).__name__,'error':str(e)}
+        stages.append({'stage':'RACECARD','state':'ERROR','error_type':type(e).__name__})
+    # KDreams source-published 並び予想 is treated as prediction evidence, never inferred.
+    try:
+        le=_b571_bind_line_formation(sel,target_date,entries)
+        base['prediction_evidence']={'state':le.get('state'),'kind':'KDREAMS_NARABI_YOSO','line_formation':le,
+                                     'inference_used':False}
+        stages.append({'stage':'PREDICTION_EVIDENCE','state':le.get('state')})
+    except Exception as e:
+        base['prediction_evidence']={'state':'ERROR','kind':'KDREAMS_NARABI_YOSO','error_type':type(e).__name__,'error':str(e),'inference_used':False}
+        stages.append({'stage':'PREDICTION_EVIDENCE','state':'ERROR'})
+    # Market is fetched directly from the already source-bound racedetail identity.
+    odds_url=_odds_url_from_racedetail(sel.get('source_racedetail_url'))
+    try:
+        oraw,olat,otr=_b5841_probe_fetch(odds_url,3.0)
+        active=[int(e.get('car_no')) for e in entries if e.get('car_no') is not None]
+        sections=parse_kd_odds_sections(oraw,active) if active else {k:{'state':'UNKNOWN','data':[],'rejected':[]} for k in ('wide','quinella','exacta','trio','trifecta')}
+        market_state='AVAILABLE' if sections and all((sections.get(k) or {}).get('state')=='AVAILABLE' for k in ('wide','quinella','exacta','trio','trifecta')) else 'PARTIAL'
+        base['market']={'state':market_state,'source':'KDREAMS_ODDS','source_url':odds_url,'transport':otr,'latency_ms':olat,
+                        'sections':sections,'active_car_numbers':active,'content_sha256':hashlib.sha256(oraw.encode()).hexdigest()}
+        stages.append({'stage':'MARKET','state':market_state,'elapsed_ms':olat})
+    except Exception as e:
+        base['market']={'state':'ERROR','source':'KDREAMS_ODDS','source_url':odds_url,'error_type':type(e).__name__,'error':str(e)}
+        stages.append({'stage':'MARKET','state':'ERROR','error_type':type(e).__name__})
+    # Result uses the already hardened B58 parser and chronology guard.
+    try:
+        result=_b581_official_result(tr,entries)
+        base['official_result']=result
+        stages.append({'stage':'OFFICIAL_RESULT','state':result.get('state')})
+    except Exception as e:
+        base['official_result']={'state':'ERROR','error_type':type(e).__name__,'error':str(e),'fabricated_data':False}
+        stages.append({'stage':'OFFICIAL_RESULT','state':'ERROR'})
+    component_states={k:(base.get(k) or {}).get('state') for k in ('racecard','prediction_evidence','market','official_result')}
+    required_ok=(component_states.get('racecard')=='AVAILABLE' and component_states.get('market')=='AVAILABLE')
+    result_ok=component_states.get('official_result') in ('AVAILABLE','NOT_PUBLISHED','UNKNOWN')
+    base['state']='AVAILABLE' if required_ok and result_ok else 'PARTIAL'
+    base['quality']={'component_states':component_states,'target_identity_verified':True,
+                     'racecard_required':True,'market_all_5_bet_types_required_for_available':True,
+                     'prediction_evidence_optional':True,'official_result_chronology_aware':True}
+    base['blockers']=[] if base['state']=='AVAILABLE' else [k.upper()+'_NOT_AVAILABLE' for k,v in component_states.items() if k in ('racecard','market') and v!='AVAILABLE']
+    base['request_elapsed_ms']=round((time.time()-started)*1000,1)
+    return base
+
 class S(BaseHTTPRequestHandler):
  def j(self,c,o,head=False):
   z=json.dumps(o,ensure_ascii=False).encode();self.send_response(c);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(z)));self.end_headers()
@@ -2935,6 +3011,9 @@ class S(BaseHTTPRequestHandler):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
+  rp=re.fullmatch(r"/v1/race-package/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
+  if rp:
+   venue=rp.group(1); rn=int(rp.group(2)); td=rp.group(3) or _b56_jst_now().date().isoformat(); result=live_race_package_b590(td,venue,rn); return self.j(200 if result.get("state") in ("AVAILABLE","PARTIAL") else 503,result)
   sdp=re.fullmatch(r"/v1/scheduled-start-dom-probe/(\d{4}-\d{2}-\d{2})",p)
   if sdp:
    q=parse_qs(urlparse(self.path).query); venue=(q.get("venue") or [None])[0]; rn=(q.get("race") or [None])[0]

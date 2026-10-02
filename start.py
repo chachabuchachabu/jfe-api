@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -200,6 +200,32 @@ def _b591_market_table_fingerprints(raw):
   out.append({"index":i,"attrs":re.sub(r"\\s+"," ",attrs).strip()[:240],"text_prefix":t[:160],
               "explicit_labels":labels,"numeric_token_count":len(nums),"byte_length":len(m.group(0).encode())})
  return out
+
+def _b592_odds_dom_diagnostics(raw):
+    """Bounded structural diagnostics for KDreams odds DOM. No odds are promoted from this evidence."""
+    labels=("ワイド","2車複","２車複","2車単","２車単","3連複","３連複","3連単","３連単")
+    out=[]
+    tag_re=re.compile(r"<(?P<tag>[a-zA-Z0-9]+)\\b(?P<attrs>[^>]*)>(?P<body>.{0,5000}?)</(?P=tag)>",re.S|re.I)
+    for i,m in enumerate(tag_re.finditer(raw)):
+        plain=txt(m.group(0)); hits=[lab for lab in labels if lab in plain]
+        if not hits: continue
+        attrs=re.sub(r"\\s+"," ",m.group("attrs")).strip()
+        cls=re.search(r"class\\s*=\\s*[\"']([^\"']+)[\"']",attrs,re.I)
+        ident=re.search(r"id\\s*=\\s*[\"']([^\"']+)[\"']",attrs,re.I)
+        data_attrs=re.findall(r"(data-[\\w:-]+)\\s*=\\s*[\"']([^\"']*)[\"']",attrs,re.I)
+        out.append({"index":i,"tag":m.group("tag").lower(),"class":cls.group(1)[:200] if cls else None,"id":ident.group(1)[:160] if ident else None,"data_attrs":data_attrs[:12],"labels":sorted(set(hits)),"text_prefix":plain[:360],"numeric_token_count":len(re.findall(r"(?<![0-9])\\d{1,6}(?:\\.\\d+)?(?![0-9])",plain)),"byte_length":len(m.group(0).encode())})
+        if len(out)>=80: break
+    attrs=[]
+    for m in re.finditer(r"<(div|ul|ol|li|dl|dt|dd|section|article|p|span|a)\\b([^>]*)>",raw,re.I):
+        a=m.group(2)
+        c=re.search(r"class\\s*=\\s*[\"']([^\"']+)[\"']",a,re.I); ident=re.search(r"id\\s*=\\s*[\"']([^\"']+)[\"']",a,re.I)
+        val=" ".join(x for x in ((c.group(1) if c else ""),(ident.group(1) if ident else "")) if x)
+        if val and re.search(r"odds|odd|wide|quin|exact|trio|trif|bet|kumi|rate|ratio|popular",val,re.I): attrs.append({"tag":m.group(1).lower(),"class":c.group(1)[:200] if c else None,"id":ident.group(1)[:160] if ident else None})
+    uniq=[]; seen=set()
+    for x in attrs:
+        k=(x["tag"],x.get("class"),x.get("id"))
+        if k not in seen: seen.add(k); uniq.append(x)
+    return {"revision":"B59.2","label_bearing_nodes":out,"odds_attribute_inventory":uniq[:120],"label_node_count":len(out),"odds_attribute_count":len(uniq)}
 
 def parse_kd_odds_sections(raw, active_car_nos):
  """B59.1 fail-closed parser: a bet type is promoted only from an independently bounded label region.
@@ -3018,7 +3044,7 @@ def live_race_package_b590(target_date, venue, race_no):
         sections=parse_kd_odds_sections(oraw,active) if active else {k:{'state':'UNKNOWN','data':[],'rejected':[]} for k in ('wide','quinella','exacta','trio','trifecta')}
         market_state='AVAILABLE' if sections and all((sections.get(k) or {}).get('state')=='AVAILABLE' for k in ('wide','quinella','exacta','trio','trifecta')) else 'PARTIAL'
         base['market']={'state':market_state,'source':'KDREAMS_ODDS','source_url':odds_url,'transport':otr,'latency_ms':olat,
-                        'sections':sections,'parser_diagnostics':{'revision':'B59.1','table_fingerprints':_b591_market_table_fingerprints(oraw)[:40]},'active_car_numbers':active,'content_sha256':hashlib.sha256(oraw.encode()).hexdigest()}
+                        'sections':sections,'parser_diagnostics':{'revision':'B59.2','table_fingerprints':_b591_market_table_fingerprints(oraw)[:40],'dom':_b592_odds_dom_diagnostics(oraw)},'active_car_numbers':active,'content_sha256':hashlib.sha256(oraw.encode()).hexdigest()}
         stages.append({'stage':'MARKET','state':market_state,'elapsed_ms':olat})
     except Exception as e:
         base['market']={'state':'ERROR','source':'KDREAMS_ODDS','source_url':odds_url,'error_type':type(e).__name__,'error':str(e)}

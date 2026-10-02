@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.4.2"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.4.3"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -256,7 +256,7 @@ def parse_kd_odds_sections(raw, active_car_nos):
   ('quinella','JS_ODDSCONTENTS_2shahuku',2,False),
   ('wide','JS_ODDSCONTENTS_wide',2,False),
  ]
- states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4.2'} for k,_,_,_ in spec}
+ states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4.3'} for k,_,_,_ in spec}
  ids=[x[1] for x in spec]
  for idx,(key,dom_id,nlegs,ordered) in enumerate(spec):
   rec=states[key]
@@ -305,10 +305,13 @@ def parse_kd_odds_sections(raw, active_car_nos):
   # scope it strictly to JS_ODDSCONTENTS_3rentan.
   if key=='trifecta':
    bt5=[t for t in _b494_tables(sec) if t.get('class') and 'odds_table' in t['class'].split() and 'bt5' in t['class'].split()]
-   cq,cmeta=_b495_bind_trifecta_bt5(bt5,sorted(active)) if bt5 else ([],{'binding_method':'BT5_CLASS_COORDINATE','axis_count':0,'axes':[],'conflicts':[],'rejected_rows':[{'reason':'BT5_TABLE_NOT_FOUND'}]})
+   cq,cmeta=_b5943_bind_trifecta_bt5(bt5,sorted(active)) if bt5 else ([],{'binding_method':'BT5_CLASS_COORDINATE','axis_count':0,'axes':[],'conflicts':[],'rejected_rows':[{'reason':'BT5_TABLE_NOT_FOUND'}]})
    rec['coordinate_binding_evidence']=cmeta
    rec['bt5_axis_table_count']=len(bt5)
-   if cq and not cmeta.get('conflicts') and not cmeta.get('rejected_rows'):
+   cross=_b5943_trifecta_popularity_crosscheck(plain,cq) if cq else {'state':'FAILED','method':'SAME_CONTAINER_EXPLICIT_POPULARITY_ROWS','compared_count':0,'mismatch_count':0,'mismatch_examples':[]}
+   rec['semantic_crosscheck']=cross
+   if cross.get('state')!='PASSED': rec['rejected'].append({'reason':'TRIFECTA_SEMANTIC_CROSSCHECK_FAILED','detail':cross})
+   if cq and not cmeta.get('conflicts') and not cmeta.get('rejected_rows') and cross.get('state')=='PASSED':
     seen={tuple(q['selection']):q['odds'] for q in cq}
     conflicts=set()
    elif cmeta.get('conflicts') or cmeta.get('rejected_rows'):
@@ -1169,6 +1172,86 @@ def _b495_bind_trifecta_bt5(bt5_tables,active):
             rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'SECOND_ROW_COUNT_MISMATCH','row_count':row_hits,'expected':len(active)-1})
     out=[{'selection':list(k),'odds':v} for k,v in sorted(quotes.items())]
     return out,{'binding_method':'BT5_CLASS_COORDINATE','axis_count':len(set(axes)),'axes':sorted(set(axes)),'conflicts':conflicts,'rejected_rows':rejected}
+
+
+
+def _b5943_bind_trifecta_bt5(bt5_tables,active):
+    """KDreams bt5 semantic binding verified against popularity rows.
+
+    Actual KDreams semantics:
+      table heading th.nX = first place
+      column heading th.nZ = second place
+      row heading th.nY = third place
+    """
+    aset=set(active); quotes={}; conflicts=[]; rejected=[]; axes=[]
+    for t in bt5_tables:
+        html=t.get('html') or ''
+        rows=list(re.finditer(r'<tr\b([^>]*)>(.*?)</tr>',html,re.I|re.S))
+        if len(rows)<4:
+            rejected.append({'table_index':t.get('table_index'),'reason':'BT5_ROW_STRUCTURE_SHORT'}); continue
+        hm=re.search(r'<th\b([^>]*)\bcolspan\s*=\s*["\']8["\'][^>]*>',rows[0].group(2),re.I|re.S)
+        if not hm: hm=re.search(r'<th\b([^>]*)>',rows[0].group(2),re.I|re.S)
+        first=_b495_car_from_class(_b4951_attrs(hm.group(1) if hm else '').get('class'))
+        if first not in aset:
+            rejected.append({'table_index':t.get('table_index'),'reason':'FIRST_AXIS_NOT_CLASS_BOUND'}); continue
+        axes.append(first)
+        # Column headings are SECOND place on the live KDreams bt5 layout.
+        second_cols=[]
+        for cm in re.finditer(r'<th\b([^>]*)>(.*?)</th>',rows[1].group(2),re.I|re.S):
+            c=_b495_car_from_class(_b4951_attrs(cm.group(1) or '').get('class'))
+            if c in aset and c!=first: second_cols.append(c)
+        if len(second_cols)!=len(active)-1 or len(set(second_cols))!=len(second_cols):
+            rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'SECOND_AXIS_COUNT_MISMATCH','second_axes':second_cols}); continue
+        row_hits=0
+        for rm in rows[3:]:
+            cells=list(re.finditer(r'<(td|th)\b([^>]*)>(.*?)</\1>',rm.group(2),re.I|re.S))
+            if len(cells)<3: continue
+            third=None
+            for cm in cells:
+                if cm.group(1).lower()=='th':
+                    c=_b495_car_from_class(_b4951_attrs(cm.group(2) or '').get('class'))
+                    if c in aset and c!=first: third=c; break
+            if third is None:
+                rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'THIRD_AXIS_NOT_CLASS_BOUND'}); continue
+            data=[cm for cm in cells if cm.group(1).lower()=='td']
+            if len(data)!=len(second_cols):
+                rejected.append({'table_index':t.get('table_index'),'first':first,'third':third,'reason':'CELL_COLUMN_COUNT_MISMATCH','cells':len(data),'expected':len(second_cols)}); continue
+            row_hits+=1
+            for second,cm in zip(second_cols,data):
+                attrs=_b4951_attrs(cm.group(2) or ''); celltxt=txt(cm.group(3))
+                if second==third:
+                    if 'empty' not in (attrs.get('class') or '').split() and celltxt:
+                        rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'DIAGONAL_NOT_EMPTY'})
+                    continue
+                if 'empty' in (attrs.get('class') or '').split():
+                    rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'UNEXPECTED_EMPTY_ODDS_CELL'}); continue
+                if not re.fullmatch(r'\d{1,5}\.\d',celltxt):
+                    rejected.append({'table_index':t.get('table_index'),'selection':[first,second,third],'reason':'ODDS_VALUE_NOT_BOUND','text':celltxt[:40]}); continue
+                odds=float(celltxt); key=(first,second,third)
+                if key in quotes and quotes[key]!=odds:
+                    conflicts.append({'selection':list(key),'first_odds':quotes[key],'other_odds':odds})
+                else: quotes[key]=odds
+        if row_hits!=len(active)-1:
+            rejected.append({'table_index':t.get('table_index'),'first':first,'reason':'THIRD_ROW_COUNT_MISMATCH','row_count':row_hits,'expected':len(active)-1})
+    out=[{'selection':list(k),'odds':v} for k,v in sorted(quotes.items())]
+    return out,{'binding_method':'BT5_CLASS_COORDINATE_SEMANTIC_V2','axis_semantics':{'table':'first','column':'second','row':'third'},'axis_count':len(set(axes)),'axes':sorted(set(axes)),'conflicts':conflicts,'rejected_rows':rejected}
+
+def _b5943_trifecta_popularity_crosscheck(plain, coordinate_quotes):
+    """Compare explicit A-B-C popularity rows in the same container to bt5 coordinates."""
+    cmap={tuple(q['selection']):float(q['odds']) for q in coordinate_quotes}
+    pat=re.compile(r'(?<![0-9])([1-9])\s*-\s*([1-9])\s*-\s*([1-9])\s+(\d{1,5}(?:\.\d+)?)(?![0-9])')
+    explicit={}
+    for m in pat.finditer(plain):
+        sel=(int(m.group(1)),int(m.group(2)),int(m.group(3))); odds=float(m.group(4))
+        if len(set(sel))<3: continue
+        if sel not in explicit: explicit[sel]=odds
+    mism=[]; compared=0
+    for sel,odds in explicit.items():
+        if sel not in cmap: continue
+        compared+=1
+        if cmap[sel]!=odds and len(mism)<12:
+            mism.append({'selection':list(sel),'coordinate_odds':cmap[sel],'popularity_odds':odds})
+    return {'state':'PASSED' if compared>0 and not mism else 'FAILED','method':'SAME_CONTAINER_EXPLICIT_POPULARITY_ROWS','compared_count':compared,'mismatch_count':len(mism),'mismatch_examples':mism}
 
 def canonical_market_bind_b494(raw,active):
     tables=_b494_tables(raw); n=len(active); sections={}; evidence=[]

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.0"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -190,43 +190,83 @@ def _norm_combination(x):
  nums=[int(n) for n in re.findall(r"[1-9]",x)]
  return tuple(nums)
 
+def _b591_market_table_fingerprints(raw):
+ """Expose non-sensitive structural evidence so KDreams odds DOM changes can be diagnosed fail-closed."""
+ out=[]
+ for i,m in enumerate(re.finditer(r"<table\\b([^>]*)>(.*?)</table>",raw,flags=re.S|re.I)):
+  attrs=m.group(1); body=m.group(2); t=txt(body)
+  labels=[x for x in ("3連単","2車単","3連複","2車複","ワイド") if x in t]
+  nums=re.findall(r"(?<![0-9])(\\d{1,5}(?:\\.\\d+)?)(?![0-9])",t)
+  out.append({"index":i,"attrs":re.sub(r"\\s+"," ",attrs).strip()[:240],"text_prefix":t[:160],
+              "explicit_labels":labels,"numeric_token_count":len(nums),"byte_length":len(m.group(0).encode())})
+ return out
+
 def parse_kd_odds_sections(raw, active_car_nos):
- """IC1.4-C fail-closed odds parser. Values are promoted only inside an explicitly bound bet-type section."""
+ """B59.1 fail-closed parser: a bet type is promoted only from an independently bounded label region.
+ The navigation/menu label cluster is explicitly excluded; cross-bet contamination is rejected.
+ """
  active=set(active_car_nos); text=txt(raw)
- # Find explicit bet-type headings in document order. No heading => no inference.
- marks=[]
- for label,(key,legs) in BET_TYPES.items():
-  for m in re.finditer(re.escape(label),text): marks.append((m.start(),m.end(),label,key,legs))
- # De-duplicate aliases/hits at nearly the same position and sort.
- marks=sorted(marks,key=lambda x:x[0]); ded=[]
- for x in marks:
-  if ded and x[0]-ded[-1][0]<4 and x[3]==ded[-1][3]: continue
-  ded.append(x)
- marks=ded
- states={k:{"state":"UNKNOWN","bet_type_bound":False,"data":[],"rejected":[]} for k in ("wide","quinella","exacta","trio","trifecta")}
- for i,(a,b,label,key,legs) in enumerate(marks):
-  end=marks[i+1][0] if i+1<len(marks) else min(len(text),b+12000)
+ keys=("wide","quinella","exacta","trio","trifecta")
+ states={k:{"state":"UNKNOWN","bet_type_bound":False,"data":[],"rejected":[]} for k in keys}
+ aliases={"wide":["ワイド"],"quinella":["2車複","２車複"],"exacta":["2車単","２車単"],"trio":["3連複","３連複"],"trifecta":["3連単","３連単"]}
+ legs={"wide":2,"quinella":2,"exacta":2,"trio":3,"trifecta":3}
+ # KDreams renders a compact bet-type navigation cluster before the actual odds bodies.
+ # Never use those adjacent labels as data boundaries.
+ menu_hits=[]
+ for key,labs in aliases.items():
+  for lab in labs:
+   for m in re.finditer(re.escape(lab),text): menu_hits.append((m.start(),m.end(),key,lab))
+ menu_hits.sort()
+ clusters=[]
+ for h in menu_hits:
+  if not clusters or h[0]-clusters[-1][-1][1]>160: clusters.append([h])
+  else: clusters[-1].append(h)
+ menu_ranges=[]
+ for c in clusters:
+  if len(set(x[2] for x in c))>=4: menu_ranges.append((c[0][0],c[-1][1]))
+ # Only isolated/repeated labels outside the navigation cluster may bind a section.
+ usable=[]
+ for h in menu_hits:
+  if any(a<=h[0]<=b for a,b in menu_ranges): continue
+  usable.append(h)
+ for i,(a,b,key,label) in enumerate(usable):
+  end=usable[i+1][0] if i+1<len(usable) else min(len(text),b+16000)
   section=text[b:end]
-  rec=states[key];rec["bet_type_bound"]=True;rec["label_evidence"]=label
-  # Require exact leg arity; separators may be -, >, =, whitespace around values.
-  pat=r"(?<![0-9])("+r"\s*[-=>]\s*".join([r"[1-9]"]*legs)+r")\s+(\d{1,5}(?:\.\d+)?)"
+  # A bounded section must not contain a different bet label near its front.
+  foreign=[lab for k,labs in aliases.items() if k!=key for lab in labs if lab in section[:300]]
+  if foreign: continue
+  rec=states[key]; rec["bet_type_bound"]=True; rec["label_evidence"]=label; rec["boundary_method"]="ISOLATED_POST_MENU_LABEL"
+  nlegs=legs[key]
+  pat=r"(?<![0-9])("+r"\\s*[-=>]\\s*".join([r"[1-9]"]*nlegs)+r")\\s+(\\d{1,5}(?:\\.\\d+)?)"
+  seen={}
   for comb,val in re.findall(pat,section):
-   nums=_norm_combination(comb); reason=None
-   if len(nums)!=legs: reason="SELECTION_ARITY_ERROR"
-   elif len(set(nums))!=legs: reason="DUPLICATE_SELECTION"
+   nums=_norm_combination(comb); reason=None; odds=float(val)
+   if len(nums)!=nlegs: reason="SELECTION_ARITY_ERROR"
+   elif len(set(nums))!=nlegs: reason="DUPLICATE_SELECTION"
    elif not set(nums).issubset(active): reason="INVALID_COMBINATION"
-   else:
-    odds=float(val)
-    if odds<=1.0: reason="INVALID_ODDS"
-   item={"combination":"-".join(map(str,nums)),"selection":list(nums),"odds":float(val)}
-   if reason:item["reason"]=reason;rec["rejected"].append(item)
-   else:rec["data"].append(item)
-  # Explicit section but no valid values is UNKNOWN unless source explicitly says unpublished.
+   elif odds<=1.0: reason="INVALID_ODDS"
+   # unordered products must be canonical; ordered products preserve order.
+   canon=tuple(sorted(nums)) if key in ("wide","quinella","trio") else tuple(nums)
+   item={"combination":"-".join(map(str,canon)),"selection":list(canon),"odds":odds}
+   if reason:
+    item["reason"]=reason; rec["rejected"].append(item); continue
+   old=seen.get(canon)
+   if old is not None and abs(old-odds)>1e-9:
+    rec["rejected"].append({**item,"reason":"CONFLICTING_DUPLICATE_ODDS"}); continue
+   seen[canon]=odds
+  rec["data"]=[{"combination":"-".join(map(str,k)),"selection":list(k),"odds":v} for k,v in seen.items()]
   unpublished=bool(re.search(r"(?:未発売|発売前|オッズ未発表|まだ発売されていません)",section[:1200]))
-  if rec["data"]: rec["state"]="AVAILABLE"
+  if rec["rejected"] and any(x.get("reason")=="CONFLICTING_DUPLICATE_ODDS" for x in rec["rejected"]): rec["state"]="ERROR"
+  elif rec["data"]: rec["state"]="AVAILABLE"
   elif unpublished: rec["state"]="NOT_PUBLISHED"
   elif rec["rejected"]: rec["state"]="ERROR"
   else: rec["state"]="UNKNOWN"
+ # Diagnostics are attached without promoting any unbound market data.
+ fps=_b591_market_table_fingerprints(raw)
+ for rec in states.values():
+  rec["parser_revision"]="B59.1"
+  rec["menu_cluster_count"]=len(menu_ranges)
+  rec["table_fingerprint_count"]=len(fps)
  return states
 
 def kd_odds_probe(raw,date,venue,rno,entry):
@@ -2978,7 +3018,7 @@ def live_race_package_b590(target_date, venue, race_no):
         sections=parse_kd_odds_sections(oraw,active) if active else {k:{'state':'UNKNOWN','data':[],'rejected':[]} for k in ('wide','quinella','exacta','trio','trifecta')}
         market_state='AVAILABLE' if sections and all((sections.get(k) or {}).get('state')=='AVAILABLE' for k in ('wide','quinella','exacta','trio','trifecta')) else 'PARTIAL'
         base['market']={'state':market_state,'source':'KDREAMS_ODDS','source_url':odds_url,'transport':otr,'latency_ms':olat,
-                        'sections':sections,'active_car_numbers':active,'content_sha256':hashlib.sha256(oraw.encode()).hexdigest()}
+                        'sections':sections,'parser_diagnostics':{'revision':'B59.1','table_fingerprints':_b591_market_table_fingerprints(oraw)[:40]},'active_car_numbers':active,'content_sha256':hashlib.sha256(oraw.encode()).hexdigest()}
         stages.append({'stage':'MARKET','state':market_state,'elapsed_ms':olat})
     except Exception as e:
         base['market']={'state':'ERROR','source':'KDREAMS_ODDS','source_url':odds_url,'error_type':type(e).__name__,'error':str(e)}

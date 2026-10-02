@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b58.4.7"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b58.4.8"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -2377,6 +2377,50 @@ def select_source_bound_race_b56(rv,selector):
     r=matches[0]; venue=next(v for v in rv.get('venues') or [] if v.get('kaisai_date_id')==r['kaisai_date_id'])
     return (venue,r['race_no'],r['source_racedetail_url']),diag
 
+# B58.4.8: venue path map used only to construct explicit historical fallback probes.
+# A constructed URL is never trusted by itself; _b561_bind_start must source-verify
+# page date + venue + race number + source-published scheduled start.
+_B5848_VENUE_SLUG={
+ '11':'hakodate','12':'aomori','13':'iwakitaira','21':'yahiko','22':'maebashi','23':'toride','24':'utsunomiya',
+ '25':'omiya','26':'seibuen','27':'keiokaku','28':'tachikawa','31':'matsudo','32':'chiba','34':'kawasaki',
+ '35':'hiratsuka','36':'odawara','37':'ito','38':'shizuoka','42':'nagoya','43':'gifu','44':'ogaki','45':'toyohashi',
+ '46':'toyama','47':'matsusaka','48':'yokkaichi','51':'fukui','53':'nara','54':'mukomachi','55':'wakayama',
+ '56':'kishiwada','61':'tamano','62':'hiroshima','63':'hofu','71':'takamatsu','73':'komatsushima','74':'kochi',
+ '75':'matsuyama','81':'kokura','83':'kurume','84':'takeo','85':'sasebo','86':'beppu','87':'kumamoto'}
+
+def _b5848_explicit_historical_fallback(vc,target_date,race_no):
+    """Probe a historical explicit race when the KDreams current root has no meeting links.
+
+    Generate a neutral day-1 seed, expand day 1..3 through the existing B58.4
+    source-body validator, and return a candidate only when exactly one page proves
+    the requested date/venue/race identity.  No guessed ID is promoted directly.
+    """
+    diag={'state':'NOT_ATTEMPTED','policy':'EXPLICIT_TARGET_SOURCE_BODY_FALLBACK',
+          'venue_code':vc,'target_date':target_date,'race_no':race_no,'seed':None,'resolution':None}
+    slug=_B5848_VENUE_SLUG.get(str(vc or '').zfill(2))
+    if not slug:
+        diag.update({'state':'UNAVAILABLE','reason':'VENUE_SLUG_NOT_MAPPED'}); return None,diag
+    try:
+        d=datetime.strptime(target_date,'%Y-%m-%d').strftime('%Y%m%d'); rn=int(race_no)
+    except Exception as e:
+        diag.update({'state':'ERROR','reason':'INVALID_EXPLICIT_TARGET','error_type':type(e).__name__}); return None,diag
+    kid=f'{str(vc).zfill(2)}{d}0100'
+    url=f'https://keirin.kdreams.jp/{slug}/racedetail/{kid}{rn:02d}/'
+    seed={'kaisai_date_id':kid,'venue_code':str(vc).zfill(2),'venue_name':_B56_VENUES.get(str(vc).zfill(2)),
+          'race_no':rn,'source_racedetail_url':url,'identity_state':'FALLBACK_SEED',
+          'scheduled_start':{'state':'UNKNOWN','value':None,'reason':'HISTORICAL_FALLBACK_NOT_YET_BOUND'}}
+    diag['seed']={'kaisai_date_id':kid,'source_racedetail_url':url}
+    resolved=_b584_resolve_multiday_row(seed,target_date)
+    ss=resolved.get('scheduled_start') or {}
+    meta=resolved.get('meeting_identity_normalization') or {}
+    diag['resolution']={'kaisai_date_id':resolved.get('kaisai_date_id'),'scheduled_start':ss,
+                        'meeting_identity_normalization':meta}
+    if ss.get('state')=='AVAILABLE':
+        resolved['identity_state']='VERIFIED'
+        resolved['historical_fallback']={'state':'VERIFIED','reason':'UNIQUE_SOURCE_BODY_IDENTITY_MATCH'}
+        diag['state']='VERIFIED'; return resolved,diag
+    diag.update({'state':'UNRESOLVED','reason':ss.get('reason') or 'SOURCE_BODY_FALLBACK_FAILED'}); return None,diag
+
 def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
     started=time.time(); jst=_b56_jst_now(); mode=str(mode or 'NOW').upper(); td=target_date or jst.date().isoformat()
     rv=live_race_verification(td); rows=_b56_identity_rows(rv); vc=_b56_norm_venue(venue)
@@ -2402,6 +2446,14 @@ def resolve_target_b56(mode='NOW',target_date=None,venue=None,race_no=None):
           'attempts':[{'url':e.get('url'),'http_status':e.get('http_status'),'byte_length':e.get('byte_length'),
                        'race_numbers':e.get('race_numbers') or []} for e in (v.get('evidence') or [])],
           'errors':v.get('errors') or []})
+    # B58.4.8: the current KDreams root may contain no links for a historical date.
+    # For an explicit RACE request only, probe the requested venue/date/race directly
+    # and still require unique source-body identity before adding a candidate.
+    resolver_diag['historical_fallback']={'state':'NOT_NEEDED'}
+    if mode=='RACE' and not filtered and vc is not None and race_no is not None:
+        fb,fbdiag=_b5848_explicit_historical_fallback(vc,td,int(race_no))
+        resolver_diag['historical_fallback']=fbdiag
+        if fb is not None: filtered=[fb]
     blockers=[]; selected=None; excluded_started=[]; unresolved=[]
     if venue is not None and vc is None:blockers.append('VENUE_NOT_RECOGNIZED')
     if mode in ('NOW','VENUE','RACE') and filtered:

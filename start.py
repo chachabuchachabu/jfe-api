@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.4"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.4.1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -256,7 +256,7 @@ def parse_kd_odds_sections(raw, active_car_nos):
   ('quinella','JS_ODDSCONTENTS_2shahuku',2,False),
   ('wide','JS_ODDSCONTENTS_wide',2,False),
  ]
- states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4'} for k,_,_,_ in spec}
+ states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4.1'} for k,_,_,_ in spec}
  ids=[x[1] for x in spec]
  for idx,(key,dom_id,nlegs,ordered) in enumerate(spec):
   rec=states[key]
@@ -298,6 +298,21 @@ def parse_kd_odds_sections(raw, active_car_nos):
     conflicts.add(canon); rec['rejected'].append({**item,'reason':'CONFLICTING_DUPLICATE_ODDS'}); continue
    seen[canon]=val
   for c in conflicts: seen.pop(c,None)
+  # B59.4.1: KDreams trifecta's canonical full market is a set of bt5
+  # coordinate tables. Explicit A-B-C strings belong to bounded ranking views
+  # (100 rows) and are therefore insufficient for the 210-combination market.
+  # Reuse the previously source-verified B49.5 class-coordinate binder, but
+  # scope it strictly to JS_ODDSCONTENTS_3rentan.
+  if key=='trifecta':
+   bt5=[t for t in _b494_tables(sec) if t.get('class') and 'odds_table' in t['class'].split() and 'bt5' in t['class'].split()]
+   cq,cmeta=_b495_bind_trifecta_bt5(bt5,sorted(active)) if bt5 else ([],{'binding_method':'BT5_CLASS_COORDINATE','axis_count':0,'axes':[],'conflicts':[],'rejected_rows':[{'reason':'BT5_TABLE_NOT_FOUND'}]})
+   rec['coordinate_binding_evidence']=cmeta
+   rec['bt5_axis_table_count']=len(bt5)
+   if cq and not cmeta.get('conflicts') and not cmeta.get('rejected_rows'):
+    seen={tuple(q['selection']):q['odds'] for q in cq}
+    conflicts=set()
+   elif cmeta.get('conflicts') or cmeta.get('rejected_rows'):
+    rec['rejected'].extend([{'reason':'BT5_COORDINATE_BINDING_ERROR','detail':x} for x in (cmeta.get('conflicts') or [])+(cmeta.get('rejected_rows') or [])])
   data=[]
   for sel,val in sorted(seen.items()):
    base={'combination':'-'.join(map(str,sel)),'selection':list(sel)}

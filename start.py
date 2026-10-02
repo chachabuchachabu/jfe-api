@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.5"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.5-access1"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -3195,6 +3195,7 @@ class S(BaseHTTPRequestHandler):
  def do_GET(self):
   p=unquote(self.path.split("?")[0])
   if p in("/","/health"):return self.j(200,{"service":"JFE","version":VERSION,"status":"UP","mode":"qualification","uptime_s":round(time.time()-START,2)})
+  if p=="/v1/access-probe":return self.j(200,{"schema":"JFE-ACCESS-PROBE/0.1","service":"JFE","version":VERSION,"state":"AVAILABLE","response_class":"TINY_STATIC_JSON","fabricated_data":False})
   if p=="/v1/diagnostics":return self.j(200,{"version":VERSION,"snapshots":SNAPSHOTS,"hash_owners":HASH_OWNER,"health":HEALTH})
   rp=re.fullmatch(r"/v1/race-package/race/([^/]+)/(\d+)(?:/(\d{4}-\d{2}-\d{2}))?",p)
   if rp:

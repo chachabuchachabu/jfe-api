@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import unquote,parse_qs,urlparse
-VERSION="1.0.0-ic1.4-dev-b59.4.1"; START=time.time()
+VERSION="1.0.0-ic1.4-dev-b59.4.2"; START=time.time()
 VENUES={"大宮":"25","伊東温泉":"37","岐阜":"43","防府":"63","大垣":"44","青森":"12","岸和田":"56","いわき平":"13"}
 CACHE={}; HEALTH={}; SNAPSHOTS={}; HASH_OWNER={}
 def now():return time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
@@ -256,7 +256,7 @@ def parse_kd_odds_sections(raw, active_car_nos):
   ('quinella','JS_ODDSCONTENTS_2shahuku',2,False),
   ('wide','JS_ODDSCONTENTS_wide',2,False),
  ]
- states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4.1'} for k,_,_,_ in spec}
+ states={k:{'state':'UNKNOWN','bet_type_bound':False,'data':[],'rejected':[],'parser_revision':'B59.4.2'} for k,_,_,_ in spec}
  ids=[x[1] for x in spec]
  for idx,(key,dom_id,nlegs,ordered) in enumerate(spec):
   rec=states[key]
@@ -285,7 +285,7 @@ def parse_kd_odds_sections(raw, active_car_nos):
    canon=nums if ordered else tuple(sorted(nums))
    if key=='wide':
     lo=float(row[1]); hi=float(row[2]); val=(lo,hi)
-    if lo<=1.0 or hi<=1.0 or lo>hi: reason=reason or 'INVALID_ODDS_RANGE'
+    if lo<1.0 or hi<1.0 or lo>hi: reason=reason or 'INVALID_ODDS_RANGE'
     item={'combination':'-'.join(map(str,canon)),'selection':list(canon),'odds_min':lo,'odds_max':hi}
    else:
     odds=float(row[1]); val=odds
